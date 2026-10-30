@@ -1,0 +1,465 @@
+{
+  "slug": "zoom",
+  "name": "Zoom",
+  "provider": "Zoom Communications",
+  "website": "https://marketplace.zoom.us/",
+  "category": "Video Conferencing",
+  "composio_managed": true,
+  "verdict": "Build a user-managed General app with granular scopes and test it in your own account the same day. Users outside your Zoom account can't authorize it until it passes Marketplace review (published or unlisted) or Zoom approves a time-boxed beta share URL. Start preparing your security evidence (SSDLC, SAST/DAST, privacy policy, test plan) on day one.",
+  "difficulty": {
+    "score": 4,
+    "label": "Hard",
+    "rationale": "Users in other Zoom accounts can only authorize after a Zoom review. The review covers functional/usability testing, scope evaluation, Technical Design compliance, and OWASP-based security testing. Zoom often asks for evidence like SSDLC docs and SAST/DAST output, which works as a light security assessment and is hard for solo developers. It's usually 2-4 weeks, but community threads show stalls of months."
+  },
+  "timeline": {
+    "first_token": {
+      "estimate": "15-30 min",
+      "note": "Go to marketplace.zoom.us > Develop > Build App > General App. Add a redirect URL and allow list, add scopes, then use Local Test > Add App Now with development credentials, in your own account only."
+    },
+    "production": {
+      "estimate": "3-6+ weeks",
+      "active_effort": "3-7 days (Technical Design section, security evidence, test plan, support and docs pages on your own domain, listing assets, deauthorization handling)",
+      "waiting": "Officially each submission gets a 72h (business-day) SLA and security review takes up to 2 weeks. The total is typically 2-4 weeks, depending on remediation rounds.",
+      "note": "The wait depends on how complete your Technical Design and security evidence are, how many scopes you request and whether they're justified, and how many reject-and-resubmit cycles you go through. The beta share URL needs its own approval (about 3-4 business days) and expires after 4 weeks."
+    }
+  },
+  "cost": "Free to build and publish. Developers on free Zoom accounts must upgrade to a paid (credit card) account or submit the developer information form before publishing. You may need third-party SAST/DAST tooling or a pen test to produce evidence.",
+  "paths": [
+    {
+      "name": "Private (unpublished) app",
+      "who_for": "Development, or internal use inside your own Zoom account",
+      "review": "none",
+      "limits": "Only users in your own Zoom account can authorize it. Private apps have addition caps (10 for account-level apps, 100 for user-level apps). No deauthorization webhooks."
+    },
+    {
+      "name": "Beta (shared authorization URL)",
+      "who_for": "Design partners outside your account before publishing",
+      "review": "Zoom approval of 'Request to Share' (security evidence required), typically 3-4 business days",
+      "limits": "Limited number of external users. The URL is valid 4 weeks, with 2 extensions of 4 weeks each. You can't publicize the app or use Zoom branding. Publishing invalidates beta URLs."
+    },
+    {
+      "name": "Published or unlisted Marketplace app",
+      "who_for": "Production, any Zoom account",
+      "review": "Full Marketplace review: submission completeness, branding, functionality, usability, compliance (Technical Design), security (scope evaluation and OWASP testing)",
+      "limits": "No subscriber limits. Unlisted apps go through the same review and still need full metadata. Later scope changes are re-reviewed using the development client ID."
+    }
+  ],
+  "prerequisites": [
+    {
+      "item": "Zoom account where you are owner/admin or have the Zoom for developers role",
+      "owner": "human",
+      "note": "On a free account you must upgrade or submit the developer info form before publishing."
+    },
+    {
+      "item": "Public HTTPS OAuth redirect URL and allow-list entries on your company domain (no localhost for review)",
+      "owner": "agent",
+      "note": "Localhost and 127.0.0.1 callbacks are rejected in review submissions."
+    },
+    {
+      "item": "Deauthorization Notification endpoint (webhook) that deletes user data and revokes tokens",
+      "owner": "agent",
+      "note": "Required for published apps. Private apps never receive it."
+    },
+    {
+      "item": "Privacy policy, support page (hours, response time, contacts), and user docs for add/use/remove, all hosted on your own domain",
+      "owner": "both",
+      "note": "Google Drive or Dropbox links get rejected."
+    },
+    {
+      "item": "Security evidence: SSDLC description, SAST and DAST scanner output, plus 3 of 5 of: pen test summary, security policy, incident response policy, vulnerability management, infra/dependency management",
+      "owner": "both",
+      "note": "Mandatory for beta share URL approval. Commonly requested during Marketplace security review."
+    },
+    {
+      "item": "Business details for EU/discoverability form",
+      "owner": "human",
+      "note": "Community-reported as required even for unlisted apps."
+    }
+  ],
+  "steps": [
+    {
+      "phase": "Register",
+      "title": "Create a General app",
+      "detail": "Go to marketplace.zoom.us, sign in, then Develop > Build App (or Developer > Created apps > Develop > Build an app). Choose General app > Create and rename it with the pencil icon. Under Basic Information, choose **User-managed** (each user authorizes their own data; best for most agents) or **Admin-managed** (an account admin installs for the whole account and gets account-wide access).",
+      "owner": "human",
+      "time": "5 min",
+      "url": "https://developers.zoom.us/docs/integrations/create.md"
+    },
+    {
+      "phase": "Configure",
+      "title": "Set OAuth redirect URL and allow list",
+      "detail": "Under OAuth Information, set the OAuth Redirect URL (required). Optionally turn on 'Use Strict Mode URL' (exact match) and 'Subdomain check'. Under OAuth Allow List (required), add every redirect URL or base domain you use. Use HTTPS only for production and review.",
+      "owner": "agent",
+      "time": "10 min"
+    },
+    {
+      "phase": "Configure",
+      "title": "Add granular scopes with justifications",
+      "detail": "Under Scopes > Add Scopes, pick product scopes (granular format, e.g. meeting:read:meeting, user:read:user; admin variants end in :admin). Write the Scope Description for each one. Every scope is a request to Zoom's Security Review team, so request only what you will demo in the test plan.",
+      "owner": "both",
+      "time": "20 min"
+    },
+    {
+      "phase": "Configure",
+      "title": "Event subscriptions and deauthorization",
+      "detail": "Under Features > Event Subscriptions, add your endpoint and verify it with the Secret Token (verification tokens are deprecated). Implement the app_deauthorized notification: delete the user's data and call POST https://zoom.us/oauth/revoke. Prefer webhooks over polling.",
+      "owner": "agent",
+      "time": "1-2 h",
+      "url": "https://developers.zoom.us/docs/integrations/end-user-auth/"
+    },
+    {
+      "phase": "Test",
+      "title": "Local test with development credentials",
+      "detail": "Open Local Test > Add App Now > Allow to authorize in your own account. Exchange the code at https://zoom.us/oauth/token (Basic auth with client_id:client_secret). You get an access token (1h) and refresh token (90 days, rotated on each refresh). Under Authorization URL > Generate, you can share the link with users in your own account only.",
+      "owner": "both",
+      "time": "15 min",
+      "url": "https://developers.zoom.us/docs/integrations/oauth/"
+    },
+    {
+      "phase": "Prepare",
+      "title": "Complete the Technical Design section and gather evidence",
+      "detail": "Fill out the Technical Design section in the build flow (stack, architecture, data handling, encryption, retention). Attach evidence for every 'Yes' answer: SSDLC doc, SAST and DAST screenshots or official scanner output (custom summaries aren't accepted), privacy policy, and 3 of the 5 policy/pen-test artifacts. Confirm TLS 1.2+.",
+      "owner": "both",
+      "time": "1-3 days",
+      "url": "https://developers.zoom.us/docs/distribute/security-requirements/"
+    },
+    {
+      "phase": "Review",
+      "title": "(Optional) Request a beta share URL",
+      "detail": "Go to Manage > your app > Production tab > Beta Test > Share App > Request to Share. Once approved, you get an authorization URL for a limited number of external users, valid 4 weeks (2 x 4-week extensions).",
+      "owner": "human",
+      "time": "15 min",
+      "wait": "Typically 3-4 business days",
+      "url": "https://developers.zoom.us/docs/distribute/sharing-private-and-beta-apps/"
+    },
+    {
+      "phase": "Prepare",
+      "title": "Prepare listing and test plan",
+      "detail": "Write short and long descriptions, add 2-3 gallery images, pick categories, and set the 'Adding your app' option that matches your real install flow. Link the support URL, privacy policy, and user docs (add, use, remove) on your domain. Write a step-by-step test plan per scope with a test account. A test plan is required on every submission, including resubmissions.",
+      "owner": "both",
+      "time": "1-2 days",
+      "url": "https://developers.zoom.us/docs/distribute/app-submission/common-rejection-issues/"
+    },
+    {
+      "phase": "Review",
+      "title": "Submit for review with production credentials",
+      "detail": "Switch to the Production client ID for the initial 'Create' publish request; updates later use the development client ID. Choose Publish (listed) or unlisted, then submit. Respond to reviewer notes in the submission notifications.",
+      "owner": "human",
+      "time": "1 h",
+      "wait": "72h per-submission SLA; security review up to 2 weeks; 2-4 weeks total is typical",
+      "url": "https://developers.zoom.us/docs/distribute/app-review-process/"
+    },
+    {
+      "phase": "Launch",
+      "title": "Publish and monitor",
+      "detail": "After approval, publish. Any user can now authorize. Beta URLs stop working. Zoom monitors published apps continuously and may remove a risky app during remediation.",
+      "owner": "human",
+      "time": "-"
+    }
+  ],
+  "review": {
+    "required": "always",
+    "trigger": "Any authorization by users outside your own Zoom account. Published and unlisted apps need full review. Beta sharing needs a separate Zoom approval.",
+    "process": "Submission completeness, branding, functionality (install, uninstall, config, sign-up, data flow), usability, compliance (Technical Design vs security/privacy requirements), then security review (OAuth scope evaluation and OWASP Top 10 security testing). Failures get a remediation report; you fix and resubmit.",
+    "typical_wait": "Official: 72h SLA per submission (business days); security review up to 2 weeks, 'usually way less'. Staff estimate 2-4 weeks overall. Community outliers run to ~3 months when threads stall.",
+    "reviewers_check": [
+      "Test plan covering every scope, with a working test account",
+      "Each scope is used and justified (unused scopes get denied)",
+      "Correct client ID (production for new apps, development for updates)",
+      "Support, privacy and docs URLs on company-owned domains",
+      "User docs for add, use and remove; deauthorization fully implemented (handle the notification and revoke the token)",
+      "Technical Design attestations backed by evidence (SSDLC, SAST/DAST, policies)",
+      "Branding guidelines; no ads or unexpected audio; transparent data collection"
+    ],
+    "common_rejections": [
+      "Insufficient test plan",
+      "Wrong client ID submitted",
+      "Docs or support hosted on Google Drive/Dropbox",
+      "Insufficient user documentation or long description",
+      "Gallery images missing or off-spec (need 2-3)",
+      "Free-account developer without upgrade or developer info form",
+      "Support page missing hours, response times or contacts",
+      "Unused or unjustified scopes",
+      "Wrong 'Adding your app' option",
+      "Unlisted app missing metadata",
+      "Incomplete removal flow (no token revoke on deauthorization)",
+      "No evidence for Technical Design attestations (SSDLC, DAST/SAST)"
+    ]
+  },
+  "pre_approval_limits": [
+    "Before review, only users in your own Zoom account can authorize (private app)",
+    "Private app addition caps: 10 (account-level), 100 (user-level)",
+    "Beta share URL: limited external users, 4-week validity plus 2 extensions, no public promotion or Zoom branding",
+    "Private and development apps don't receive deauthorization notifications"
+  ],
+  "oauth": {
+    "authorize_url": "https://zoom.us/oauth/authorize",
+    "token_url": "https://zoom.us/oauth/token (revoke: https://zoom.us/oauth/revoke)",
+    "pkce": "supported",
+    "refresh_tokens": "Refresh tokens last 90 days. Each refresh returns a new refresh_token; always use the latest. When it expires, the user has to re-authorize.",
+    "access_token_lifetime": "1 hour",
+    "redirect_uri_rules": "Must be on the OAuth Allow List. Optional Strict Mode (exact match) and subdomain check. HTTPS required for standard (non-PKCE) apps. Loopback http://127.0.0.1:{port} only for PKCE/native clients (port ignored); avoid the hostname 'localhost'. Review submissions with localhost callbacks are rejected. Error: 'Invalid redirect: <uri>'.",
+    "scopes": "Granular scopes such as resource:action:object (e.g. user:read:user, with admin variants ending in :admin). Each scope added is a request reviewed by Zoom Security. User-managed apps get user-level scopes; admin-managed apps can get account-wide admin scopes.",
+    "tenant_notes": "One global authorization server. User-managed apps: each user authorizes their own data. Admin-managed apps: an account admin installs for the whole account. Server-to-Server OAuth (account_credentials) only works on your own account, so it's not suitable for end-user connections. Development and production client IDs are separate."
+  },
+  "gotchas": [
+    {
+      "title": "Nobody outside your account can connect until review or beta approval",
+      "detail": "Private apps work only for members of your own Zoom account. External users need a Zoom-approved beta URL (4-week windows) or a published/unlisted app that has passed review. There's no 'testing mode with N external users' like Google has.",
+      "severity": "high",
+      "evidence": [
+        "e1",
+        "e2"
+      ]
+    },
+    {
+      "title": "Security evidence is often the real blocker",
+      "detail": "Beta URL approval requires SSDLC docs, SAST and DAST scanner output (official output only), a privacy policy, and 3 of 5 policy/pen-test artifacts. Marketplace reviewers also reject apps whose Technical Design attestations lack evidence. Solo developers report being stuck here.",
+      "severity": "high",
+      "evidence": [
+        "e3",
+        "e4"
+      ]
+    },
+    {
+      "title": "Review time is unpredictable",
+      "detail": "Officially each submission gets a 72h SLA and security review takes up to 2 weeks, with 2-4 weeks typical overall. Forum threads show multi-week silences and one approval confirmed about 3 months later.",
+      "severity": "medium",
+      "evidence": [
+        "e5",
+        "e6",
+        "e7"
+      ]
+    },
+    {
+      "title": "Production vs development client IDs",
+      "detail": "Submit the first publish request with the Production client ID and later updates with the Development client ID. Using the wrong one is a listed rejection reason.",
+      "severity": "medium",
+      "evidence": [
+        "e8",
+        "e9"
+      ]
+    },
+    {
+      "title": "Deauthorization must delete data and revoke tokens",
+      "detail": "Published apps get an app_deauthorized POST for each uninstall. You must delete the user's data, and custom removal flows must call /oauth/revoke. Private apps never receive the event, so you can't test it in production until you publish.",
+      "severity": "medium",
+      "evidence": [
+        "e10",
+        "e9",
+        "e11"
+      ]
+    },
+    {
+      "title": "Every scope is a review request",
+      "detail": "Unused or unjustified scopes get denied and you're asked to remove them. Keep agent scopes minimal and cover each one in the test plan.",
+      "severity": "medium",
+      "evidence": [
+        "e9",
+        "e12"
+      ]
+    },
+    {
+      "title": "Docs must live on your own domain",
+      "detail": "Support, privacy and docs links on Google Drive or Dropbox get rejected. The support page needs hours, response times and contact options.",
+      "severity": "low",
+      "evidence": [
+        "e9"
+      ]
+    },
+    {
+      "title": "Refresh tokens rotate and expire after 90 days",
+      "detail": "Store the newest refresh token after every refresh. An inactive user (90 days) has to reconnect.",
+      "severity": "low",
+      "evidence": [
+        "e11"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "symptom": "Invalid redirect: <redirectUri>",
+      "cause": "Redirect URI isn't on the OAuth Allow List (or Strict Mode or subdomain check fails, or it's localhost on a non-PKCE app)",
+      "fix": "Add the exact HTTPS URL to the OAuth Allow List and the Redirect URL field."
+    },
+    {
+      "symptom": "External user can't authorize the app (error, or the app doesn't install)",
+      "cause": "App is private/unpublished. Only your own account can authorize.",
+      "fix": "Request a beta share URL (Production > Beta Test > Request to Share) or get the app published or unlisted through review."
+    },
+    {
+      "symptom": "Submission rejected: 'did not provide supporting evidence to what you attested in the Technical Design section'",
+      "cause": "Missing SSDLC, SAST/DAST or policy evidence",
+      "fix": "Upload scanner output and policies, or work with your security reviewer on alternatives case by case."
+    },
+    {
+      "symptom": "Rejected for unused scopes",
+      "cause": "Scopes not exercised in the test plan",
+      "fix": "Remove them, or add test steps that exercise them."
+    },
+    {
+      "symptom": "invalid_grant on refresh",
+      "cause": "Using an old refresh token, or it expired after 90 days",
+      "fix": "Persist the latest refresh token each time. Re-run user OAuth if it expired."
+    }
+  ],
+  "agent_vs_human": {
+    "agent_can": [
+      "choose minimal granular scopes and write scope descriptions",
+      "implement OAuth, refresh and revoke",
+      "implement the deauthorization webhook and data deletion",
+      "draft Technical Design answers",
+      "run SAST/DAST tooling and collect output",
+      "draft privacy policy, support page and user docs",
+      "write the per-scope test plan"
+    ],
+    "human_must": [
+      "sign in to Zoom Marketplace with a developer-enabled account",
+      "upgrade account or submit developer info form",
+      "fill in business/EU details",
+      "attest to security practices and provide policy documents",
+      "click Request to Share and Submit",
+      "answer reviewer notifications"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "claim": "Private apps shareable only within your account; beta apps to limited external users with Zoom approval; 4-week URLs, 2 extensions; caps 10/100",
+      "source": "https://developers.zoom.us/docs/distribute/sharing-private-and-beta-apps/",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"only share private apps with members within your Zoom account\" | Re-checked: 4-week URL, two 4-week extensions, Zoom approval ~3-4 business days"
+    },
+    {
+      "id": "e2",
+      "claim": "Private/beta apps skip review; published and unlisted go through review; unlisted has no subscriber limits",
+      "source": "https://developers.zoom.us/docs/platform/key-concepts/",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Admin-managed vs user-managed definitions"
+    },
+    {
+      "id": "e3",
+      "claim": "Mandatory evidence for Authorization URL approval: SSDLC, SAST, DAST, privacy policy, 3 of 5 artifacts, TLS 1.2+",
+      "source": "https://developers.zoom.us/docs/distribute/security-requirements/",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Scanner output only, no custom summaries"
+    },
+    {
+      "id": "e4",
+      "claim": "Solo developer rejected for missing SSDLC/DAST/SAST evidence; case-by-case alternatives; EU form needs business details",
+      "source": "https://devforum.zoom.us/t/unable-to-publish-app-in-beta-or-marketplace-as-a-solo-hobby-programmer/136879",
+      "type": "community",
+      "status": "reported",
+      "note": "Aug-Nov 2025 thread with staff replies"
+    },
+    {
+      "id": "e5",
+      "claim": "72h SLA per submission (excl. weekends/holidays); security review up to 2 weeks",
+      "source": "https://devforum.zoom.us/t/marketplace-app-production-approval-timelines-post-updates/138920",
+      "type": "community",
+      "status": "reported",
+      "note": "Zoom staff replies, Nov-Dec 2025"
+    },
+    {
+      "id": "e6",
+      "claim": "Publishing typically 2-4 weeks; beta allowed to let users authorize before approval",
+      "source": "https://devforum.zoom.us/t/is-there-a-way-to-allow-users-to-use-zoom-now-length-of-verification-process/132859",
+      "type": "community",
+      "status": "reported",
+      "note": "Zoom staff answer, May 2025"
+    },
+    {
+      "id": "e7",
+      "claim": "Approval expected 'end of week' in Sept 2025; confirmation posted Dec 2025",
+      "source": "https://devforum.zoom.us/t/zoom-app-approval-timeline/137039",
+      "type": "community",
+      "status": "reported",
+      "note": "Shows unpredictable communication"
+    },
+    {
+      "id": "e8",
+      "claim": "Production client ID for initial publish; development client ID for updates",
+      "source": "https://developers.zoom.us/docs/build-flow/basic-info/app-credentials/",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Use the Production client ID for the initial request\""
+    },
+    {
+      "id": "e9",
+      "claim": "Common rejection reasons (test plan, client ID, domains, docs, gallery, free account, support, unused scopes, removal flow)",
+      "source": "https://developers.zoom.us/docs/distribute/app-submission/common-rejection-issues/",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"A test plan is required for each submission\""
+    },
+    {
+      "id": "e10",
+      "claim": "Apps must support deauthorization; published apps get app_deauthorized POST; private apps don't",
+      "source": "https://developers.zoom.us/docs/integrations/end-user-auth/",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Private apps or apps in development do not trigger deauthorization notifications.\""
+    },
+    {
+      "id": "e11",
+      "claim": "Endpoints; access token 1h; refresh token 90 days, new refresh token on each refresh; PKCE; loopback rules",
+      "source": "https://developers.zoom.us/docs/integrations/oauth/",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Refresh tokens expire after 90 days.\""
+    },
+    {
+      "id": "e12",
+      "claim": "Review stages incl. compliance (Technical Design), scope evaluation, OWASP Top 10 security testing; private/beta need no review",
+      "source": "https://developers.zoom.us/docs/distribute/app-review-process/",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "No official duration stated"
+    },
+    {
+      "id": "e13",
+      "claim": "General app creation flow, user- vs admin-managed, Strict Mode URL, allow list, scopes as security review requests, Local Test",
+      "source": "https://developers.zoom.us/docs/integrations/create.md",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"you are actually submitting a request to the Zoom Security Review team\""
+    },
+    {
+      "id": "e14",
+      "claim": "Data Compliance API deprecated; only requirement is to delete user data on deauthorization",
+      "source": "https://devforum.zoom.us/t/deauthorization-documentation-data-compliance-deprecated/52163",
+      "type": "community",
+      "status": "reported",
+      "note": "Zoom staff, June 2021"
+    },
+    {
+      "id": "e15",
+      "claim": "Localhost callbacks rejected for submissions; include deauth URL; requests processed FIFO 9-5 PT weekdays",
+      "source": "https://medium.com/zoom-developer-blog/how-to-get-your-app-published-to-the-zoom-app-marketplace-on-your-first-review-7d5c97b78d1a",
+      "type": "community",
+      "status": "reported",
+      "note": "Zoom developer blog, 2018/2022, may be dated"
+    }
+  ],
+  "uncertain": [
+    "The exact cap on beta external users isn't stated ('limited number').",
+    "Whether the full security evidence package (SAST/DAST, SSDLC) is strictly mandatory for Marketplace publication or only for beta URLs. Docs say it's mandatory for Authorization URL approval, while publication is 'subject to standard review'. In practice reviewers request it.",
+    "Docs contradict each other on beta access: the create-app doc says beta access is 'only to members of the developer's Zoom account', while the sharing doc allows external users after approval.",
+    "Whether the old refresh token is invalidated immediately on rotation isn't documented.",
+    "Real-world end-to-end review times are community-reported and vary from days to months.",
+    "Whether the EU/discoverability business-details form applies to all developers or only some regions is community-reported."
+  ],
+  "last_checked": "2026-10-30",
+  "probes": [
+    {
+      "what": "Authorize endpoint with fake client_id",
+      "result": "JSON {errorCode: 4702, errorMessage: 'Invalid client_id: …'}",
+      "outcome": "confirmed",
+      "date": "2026-10-30",
+      "method": "Live browser request (no account created, no credentials used)"
+    }
+  ]
+}

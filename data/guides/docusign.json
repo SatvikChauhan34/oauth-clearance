@@ -1,0 +1,424 @@
+{
+  "slug": "docusign",
+  "name": "Docusign (eSignature REST API)",
+  "provider": "Docusign",
+  "website": "https://developers.docusign.com",
+  "category": "E-signature",
+  "composio_managed": false,
+  "verdict": "Building against the free demo environment takes minutes. A single integration key that many customers authorise counts as a Public integration, and Docusign staff confirm going live with one needs Docusign Partner Program membership (reportedly ≥20 employees and ≥1 year old) plus a production account whose plan supports key promotion. Small teams should plan on Bring-Your-Own-Key, where each customer creates and goes live with their own key.",
+  "difficulty": {
+    "score": 5,
+    "label": "Gated",
+    "rationale": "The demo key is instant. The Oct 2025 Go-Live flow dropped the 20-API-call rule and often approves instantly or within ~48 h. But a multi-tenant public integration needs Partner Program membership (with company-size criteria) and a production plan that allows key promotion. Self-serve Business Pro accounts have been refused, and sales has pointed to custom plans."
+  },
+  "timeline": {
+    "first_token": {
+      "estimate": "10–20 min",
+      "note": "Free developer account, create an app and integration key in Apps and Keys, add a redirect URI and secret, then authorise against account-d.docusign.com"
+    },
+    "production": {
+      "estimate": "Private (own company): same day to 2 days. Public multi-tenant: several weeks to months, or not possible for small companies.",
+      "active_effort": "1–3 days (production account purchase, Go-Live form, partner onboarding materials, video)",
+      "waiting": "Go-Live check: instant or ≤48 h if flagged. Partner Program onboarding and App Review (GTM materials, video): weeks, with community reports of applications pending for weeks.",
+      "note": "Driven by integration type classification, Partner Program eligibility, and whether your production account plan supports promoting a key."
+    }
+  },
+  "cost": "Developer account free. Production account needed to promote a key. Developer API plans: Starter $50/mo (40 envelopes/mo), Intermediate $300/mo, Advanced $480/mo, Enhanced custom. Docusign staff say Go-Live itself has no fee. Partner Program terms and any fees are not published.",
+  "paths": [
+    {
+      "name": "Private custom integration (your own company's account)",
+      "who_for": "Internal tools or an agent acting only within your own Docusign account and users",
+      "review": "Automated Go-Live eligibility check; may be flagged for review (≤48 h)",
+      "limits": "Intended for your own employees and users. Not for many separate customer accounts authorising one key."
+    },
+    {
+      "name": "Public integration (one key, many customer accounts)",
+      "who_for": "Multi-tenant AI agent SaaS where each customer connects their own Docusign account",
+      "review": "Go-Live check plus Partner Program onboarding and App Review (info collection, GTM materials, video review)",
+      "limits": "Requires Docusign Partner Program membership (staff-confirmed). Applications from companies with <20 employees have been rejected. Integration type can't be changed once in review or live without contacting Support."
+    },
+    {
+      "name": "Bring Your Own Key (BYOK)",
+      "who_for": "Small vendors who can't join the Partner Program",
+      "review": "Each customer runs Go-Live for their own key as a private custom integration in their own production account",
+      "limits": "Each customer must create an integration key in their Docusign account, add your redirect URI, complete Go-Live, and paste the key and secret into your app. Heavy onboarding friction. Accounts are limited to 100 integration keys."
+    }
+  ],
+  "prerequisites": [
+    {
+      "item": "Free Docusign developer account (demo environment)",
+      "owner": "human",
+      "note": "Signup at developers.docusign.com; admin at apps-d.docusign.com"
+    },
+    {
+      "item": "HTTPS redirect URI",
+      "owner": "agent",
+      "note": "Registered on the integration key"
+    },
+    {
+      "item": "Privacy policy and terms of service URLs",
+      "owner": "human",
+      "note": "Requested during Go-Live (community)"
+    },
+    {
+      "item": "Paid production Docusign account on a plan that supports promoting integration keys",
+      "owner": "human",
+      "note": "Needed for Go-Live. Plan eligibility varies and has been case by case."
+    },
+    {
+      "item": "Docusign Partner Program membership (public integrations only)",
+      "owner": "human",
+      "note": "Apply via the Partner Portal; an onboarding rep starts App Review"
+    },
+    {
+      "item": "RSA key pair (JWT Grant only)",
+      "owner": "agent",
+      "note": "Generated in Apps and Keys"
+    }
+  ],
+  "steps": [
+    {
+      "phase": "Register",
+      "title": "Create a developer account and integration key",
+      "detail": "Sign up for a free developer account, then go to Admin (apps-d.docusign.com) > Integrations > Apps and Keys > Add App and Integration Key. Name the app. Copy the Integration Key (client_id) and API Account ID.",
+      "owner": "human",
+      "time": "10 min",
+      "url": "https://prismatic.io/docs/components/docusign.md"
+    },
+    {
+      "phase": "Configure",
+      "title": "Configure authentication",
+      "detail": "For an agent backend with a user present: Authorization Code Grant, answering that the app can securely store a client secret, then Add Secret Key (shown once). For a public client: Auth Code with PKCE. Add Redirect URIs. For background or agent-without-user flows: JWT Grant. Generate an RSA keypair, request scopes 'signature impersonation', and get one-time consent per user (or admin consent for an org).",
+      "owner": "agent",
+      "time": "15 min",
+      "url": "https://www.docusign.com/blog/demystifying-docusign-authentication"
+    },
+    {
+      "phase": "Test",
+      "title": "Get a demo token",
+      "detail": "Send the user to https://account-d.docusign.com/oauth/auth?response_type=code&scope=signature%20extended&client_id=...&redirect_uri=...&state=.... POST to https://account-d.docusign.com/oauth/token (Basic auth with integration_key:secret). The access token's expires_in is 28800 (8 h), and the refresh token lasts 30 days. Include 'extended' so each refresh extends refresh-token life by 30 days.",
+      "owner": "agent",
+      "time": "15 min",
+      "url": "https://www.docusign.com/blog/developers/authorization-code-grant-refresh-tokens"
+    },
+    {
+      "phase": "Test",
+      "title": "Look up account and base URI",
+      "detail": "GET https://account-d.docusign.com/oauth/userinfo. From accounts[], pick is_default (or let the user choose by account_name) and store account_id and base_uri. Call {base_uri}/restapi/v2.1/accounts/{account_id}/.... Don't hardcode demo.docusign.net; production base URIs vary by region (na2, na3, eu, au...).",
+      "owner": "agent",
+      "time": "15 min",
+      "url": "https://docusign.com/blog/developers/the-trenches-making-api-calls-members-multiple-accounts"
+    },
+    {
+      "phase": "Review",
+      "title": "Decide integration type (private vs public vs BYOK)",
+      "detail": "If many separate customers will authorise YOUR key, it's Public and needs Partner Program membership. Apply via the Partner Portal, tell the onboarding rep you built an ISV integration and want App Review, and review the ISV connector implementation guide. If you can't qualify, use BYOK.",
+      "owner": "human",
+      "time": "1–2 h",
+      "wait": "Partner onboarding: weeks (reported)",
+      "url": "https://community.docusign.com/go-live-70/go-live-for-a-public-integration-when-every-customer-uses-their-own-docusign-account-27596"
+    },
+    {
+      "phase": "Review",
+      "title": "Run Go-Live in Apps and Keys",
+      "detail": "Apps and Keys > your integration > Edit > select integration type, then enter credentials for the production account to promote to. The eligibility validation runs and returns Approved (usually immediate), Needs review (follow the shown steps; typically ≤48 h), or Not allowed (the plan doesn't support that type). The old 20 successful demo API calls requirement was removed in Oct 2025.",
+      "owner": "human",
+      "time": "15 min",
+      "wait": "Instant to ~48 h",
+      "url": "https://community.docusign.com/go-live-70/no-more-20-api-calls-introducing-the-streamlined-integration-go-live-experience-in-apps-keys-25623"
+    },
+    {
+      "phase": "Launch",
+      "title": "Reconfigure for production",
+      "detail": "In the PRODUCTION account's Apps and Keys, add a new secret key and RSA keypair (demo ones don't carry over, per community reports) and re-add redirect URIs. Switch auth to https://account.docusign.com/oauth/auth and /oauth/token, and userinfo to https://account.docusign.com/oauth/userinfo. Users must re-authenticate; JWT users must re-consent in production.",
+      "owner": "both",
+      "time": "30 min",
+      "url": "https://community.docusign.com/go-live-70/need-guidance-moving-docusign-integration-from-developer-demo-to-production-after-purchasing-developer-starter-plan-26739"
+    }
+  ],
+  "review": {
+    "required": "always",
+    "trigger": "Any production use needs Go-Live (promoting the integration key from the demo account to a production account). A Public integration adds Partner Program membership and App Review.",
+    "process": "Since Oct 2025: in Apps and Keys select the integration type and production account. Automated eligibility validation then instantly approves, flags for review, or disallows. Public integrations go through Partner Program onboarding (info collection, GTM materials, video review), described by Docusign as 'not a certification or exam'.",
+    "typical_wait": "Go-Live: instant in most cases, ≤48 h if flagged. Partner onboarding: weeks, with reports of applications pending for weeks with no reply.",
+    "reviewers_check": [
+      "Integration type matches use (private = own employees; public = many customers)",
+      "Production account plan supports the selected integration type",
+      "Partner Program membership for public integrations",
+      "For partner App Review: GTM materials and a video demo of the integration",
+      "OAuth configured correctly with redirect URIs, privacy and terms URLs (community)"
+    ],
+    "common_rejections": [
+      "'Your account doesn't support promoting an integration key to production' (Business Pro or self-serve plans; sales points to custom plans)",
+      "Partner Program application rejected because the company has fewer than 20 employees",
+      "Wrong integration type selected; can't be changed once in review without Support",
+      "Production account doesn't appear in Go-Live (plan doesn't support the type)"
+    ]
+  },
+  "pre_approval_limits": [
+    "Integration keys created in the developer account work only against the demo environment (account-d.docusign.com, demo.docusign.net); demo envelopes aren't legally binding",
+    "No real customer accounts can authorise a non-promoted key",
+    "Each Docusign account is limited to 100 integration keys"
+  ],
+  "oauth": {
+    "authorize_url": "https://account.docusign.com/oauth/auth (demo: https://account-d.docusign.com/oauth/auth)",
+    "token_url": "https://account.docusign.com/oauth/token (demo: https://account-d.docusign.com/oauth/token)",
+    "pkce": "supported",
+    "refresh_tokens": "Authorization Code Grant: refresh token valid 30 days. With the 'extended' scope, each use extends it by 30 days. Unused for 30 days means full re-auth, and a never-expiring refresh token isn't available. JWT Grant issues no refresh token; mint a new JWT assertion each hour.",
+    "access_token_lifetime": "Auth Code Grant: 8 hours (expires_in 28800). JWT Grant: 1 hour.",
+    "redirect_uri_rules": "Must be registered on the integration key and match. Production redirect URIs and secrets are configured on the promoted key in the production account.",
+    "scopes": "eSignature: 'signature' (plus 'extended' for long-lived refresh). JWT adds 'impersonation' and needs user consent once (individual consent URL) or organization admin consent with a claimed domain. Other APIs (Navigator, Maestro, Admin, Rooms, Click) have their own scopes.",
+    "tenant_notes": "One user can belong to several Docusign accounts across regions. After auth, call /oauth/userinfo, choose the account (is_default or user choice), and store account_id plus base_uri; API calls go to {base_uri}/restapi/v2.1/accounts/{account_id}. Demo and production are completely separate identity systems."
+  },
+  "gotchas": [
+    {
+      "title": "Multi-tenant = Public integration = Partner Program required",
+      "detail": "Docusign staff (Aug 2026): one key authorised by multiple separate customers is Public, and Partner Program membership is required even without reselling or embedded signing. Small companies (<20 employees) have been rejected and pointed to BYOK.",
+      "severity": "high",
+      "evidence": [
+        "e3",
+        "e4"
+      ]
+    },
+    {
+      "title": "Production account plan may not support key promotion",
+      "detail": "A developer who bought Business Pro after Docusign Support said it was enough got 'Your account doesn't support promoting an integration key to production', and sales pointed to a custom enterprise plan (Jul 2026).",
+      "severity": "high",
+      "evidence": [
+        "e5"
+      ]
+    },
+    {
+      "title": "The 20-API-call rule is gone",
+      "detail": "Many guides still say you need 20 successful demo calls (and a 30-day window). Docusign replaced this in Oct 2025 with instant eligibility validation in Apps and Keys.",
+      "severity": "medium",
+      "evidence": [
+        "e1"
+      ]
+    },
+    {
+      "title": "Integration type is locked once in review or live",
+      "detail": "Choosing the wrong type means contacting Customer Support; you can't cancel the review to change type.",
+      "severity": "medium",
+      "evidence": [
+        "e1"
+      ]
+    },
+    {
+      "title": "Hardcoded base URIs break in production",
+      "detail": "Production accounts live on regional hosts. Always use userinfo base_uri per account.",
+      "severity": "medium",
+      "evidence": [
+        "e6",
+        "e7"
+      ]
+    },
+    {
+      "title": "Refresh tokens die after 30 days idle",
+      "detail": "Without 'extended', and even with it if unused for 30 days, agents need a scheduled refresh or users must reconnect.",
+      "severity": "medium",
+      "evidence": [
+        "e8",
+        "e9"
+      ]
+    },
+    {
+      "title": "JWT impersonation needs per-user consent",
+      "detail": "Background agents using JWT must get each impersonated user (or an org admin with a claimed domain) to grant consent once. Otherwise token requests fail with consent_required.",
+      "severity": "medium",
+      "evidence": [
+        "e10"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "symptom": "'Your account doesn't support promoting an integration key to production'",
+      "cause": "Production account plan doesn't allow key promotion for the chosen type",
+      "fix": "Contact Docusign sales for a plan that supports it (reportedly custom/enterprise), or switch to BYOK"
+    },
+    {
+      "symptom": "Go-Live result 'Not allowed' / no production account listed",
+      "cause": "Plan doesn't support the selected integration type",
+      "fix": "Upgrade the plan or choose the correct type; contact Developer Support"
+    },
+    {
+      "symptom": "Partner Program application rejected",
+      "cause": "Eligibility criteria (reported: ≥20 employees, ≥1 year in business)",
+      "fix": "Use BYOK until eligible"
+    },
+    {
+      "symptom": "consent_required on JWT token request",
+      "cause": "User hasn't granted consent for signature+impersonation",
+      "fix": "Send the user through the consent URL (Auth Code flow) once, or get admin consent"
+    },
+    {
+      "symptom": "invalid_grant on refresh",
+      "cause": "Refresh token unused for 30+ days, or using a demo key against production",
+      "fix": "Re-run Auth Code flow; request 'extended'; confirm environment"
+    },
+    {
+      "symptom": "USER_AUTHENTICATION_FAILED / wrong account errors in production",
+      "cause": "Using demo base URI or account ID",
+      "fix": "Re-fetch userinfo from account.docusign.com and use its base_uri and account_id"
+    }
+  ],
+  "agent_vs_human": {
+    "agent_can": [
+      "generate auth code and JWT flows, consent URLs and RSA key handling",
+      "implement userinfo account/base_uri selection",
+      "draft Go-Live and partner application text and GTM materials",
+      "build a BYOK onboarding flow (per-tenant key and secret storage, instructions for customer admins)",
+      "write the demo video script"
+    ],
+    "human_must": [
+      "create the developer account",
+      "purchase a production account or negotiate a plan with sales",
+      "apply to the Partner Program and meet with the onboarding rep",
+      "record the review video",
+      "enter production credentials in Go-Live",
+      "give consent for JWT impersonation",
+      "for BYOK, each customer admin creates and promotes their own key"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "claim": "Oct 2025: 20-call requirement removed; Go-Live = select type + production account, instant/flagged (≤48h)/not allowed; public needs Partner Program; type locked",
+      "source": "https://community.docusign.com/go-live-70/no-more-20-api-calls-introducing-the-streamlined-integration-go-live-experience-in-apps-keys-25623",
+      "type": "community",
+      "status": "verified",
+      "note": "Docusign employee post, Oct 3, 2025 | Staff post by Docusign Employee, Oct 3 2025"
+    },
+    {
+      "id": "e2",
+      "claim": "Go-Live docs page last modified 2026-10-14",
+      "source": "https://developers.docusign.com/docs/esign-rest-api/go-live/",
+      "type": "official_docs",
+      "status": "uncertain",
+      "note": "JS-rendered; body could not be read"
+    },
+    {
+      "id": "e3",
+      "claim": "One key used by multiple customers is Public; Partner Program membership required; alternative BYOK",
+      "source": "https://community.docusign.com/go-live-70/go-live-for-a-public-integration-when-every-customer-uses-their-own-docusign-account-27596",
+      "type": "community",
+      "status": "verified",
+      "note": "Docusign employee reply, Aug 31, 2026 | Docusign Employee reply Aug 31 2026: \"partner Program membership is required to launch a public integration\""
+    },
+    {
+      "id": "e4",
+      "claim": "Partner application rejected for <20 employees; Support recommends BYOK",
+      "source": "https://community.docusign.com/go-live-70/go-live-path-for-a-public-integration-from-an-isv-with-under-20-employees-27679",
+      "type": "community",
+      "status": "reported",
+      "note": "Sep 4–5, 2026"
+    },
+    {
+      "id": "e5",
+      "claim": "Business Pro couldn't promote key; sales says custom enterprise plan; conflicting Support guidance",
+      "source": "https://community.docusign.com/go-live-70/go-live-eligibility-question-isv-connector-public-integration-for-a-small-isv-27321",
+      "type": "community",
+      "status": "reported",
+      "note": "Your account doesn't support promoting an integration key to production"
+    },
+    {
+      "id": "e6",
+      "claim": "Demo vs production auth/token/userinfo URLs; Auth Code + PKCE preferred; JWT needs one-time consent",
+      "source": "https://www.docusign.com/blog/demystifying-docusign-authentication",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Docusign developer blog"
+    },
+    {
+      "id": "e7",
+      "claim": "userinfo accounts[] with account_id, is_default, base_uri; append /restapi",
+      "source": "https://docusign.com/blog/developers/the-trenches-making-api-calls-members-multiple-accounts",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Docusign developer blog"
+    },
+    {
+      "id": "e8",
+      "claim": "Auth code access token 8h (28800s); refresh token 30 days; extended scope adds 30 days per use",
+      "source": "https://www.docusign.com/blog/developers/authorization-code-grant-refresh-tokens",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "eight-hour lifespan"
+    },
+    {
+      "id": "e9",
+      "claim": "Non-expiring refresh tokens not available; must use within 30 days",
+      "source": "https://community.docusign.com/esignature-api-63/refresh-token-expiry-5298",
+      "type": "community",
+      "status": "verified",
+      "note": "Docusign staff, June 2024"
+    },
+    {
+      "id": "e10",
+      "claim": "JWT: RSA keypair, signature+impersonation scopes, one-time consent, 1h token",
+      "source": "https://www.docusign.com/blog/developers/the-trenches-authenticate-without-user-interaction-system-user",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "one-time manual step"
+    },
+    {
+      "id": "e11",
+      "claim": "Partner onboarding: join program, rep sets up portal, App Review with GTM materials and video",
+      "source": "https://community.docusign.com/go-live-70/partner-program-next-steps-26615",
+      "type": "community",
+      "status": "reported",
+      "note": "Docusign employee, Mar 11, 2026; applicant waited weeks"
+    },
+    {
+      "id": "e12",
+      "claim": "Go-Live has no fees",
+      "source": "https://community.docusign.com/go-live-70/if-i-register-as-an-isv-partner-i-won-t-need-to-pay-any-additional-fees-to-go-live-with-the-app-in-production-right-21569",
+      "type": "community",
+      "status": "reported",
+      "note": "Docusign employee, Nov 2024"
+    },
+    {
+      "id": "e13",
+      "claim": "Developer API plan prices and envelope limits",
+      "source": "https://ecom.docusign.com/plans/developer",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Starter $50/mo, 40 envelopes/mo"
+    },
+    {
+      "id": "e14",
+      "claim": "Accounts limited to 100 integration keys; per-customer keys for multi-instance",
+      "source": "https://www.docusign.com/blog/developers/integration-keys-explained-a-practical-guide-for-isvs",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Docusign developer blog"
+    },
+    {
+      "id": "e15",
+      "claim": "Apps and Keys setup steps; demo-only before Go-Live (older 20-call note superseded)",
+      "source": "https://prismatic.io/docs/components/docusign.md",
+      "type": "community",
+      "status": "reported",
+      "note": "Vendor doc still cites 20 calls"
+    }
+  ],
+  "uncertain": [
+    "Official Partner Program eligibility (≥20 employees, ≥1 year) is only reported by applicants and wasn't seen on an official page",
+    "Which production plans can promote a key for private vs public types; Docusign Support and sales gave conflicting answers in 2026",
+    "Partner Program fees, if any, and App Review duration",
+    "Whether the Developer API Starter plan ($50/mo) supports key promotion for public integrations",
+    "Official go-live, after-go-live and Developer FAQ pages are JS-rendered and couldn't be read; details rely on Docusign-staff community posts and the Docusign blog",
+    "Whether demo secrets and RSA keys must be regenerated in production (commonly stated; not verified on an official page)"
+  ],
+  "last_checked": "2026-10-30",
+  "probes": [
+    {
+      "what": "Demo authorize (account-d.docusign.com) with fake integration key",
+      "result": "'Something went wrong — The client id provided is not registered with Docusign.'",
+      "outcome": "confirmed",
+      "date": "2026-10-30",
+      "method": "Live browser request (no account created, no credentials used)"
+    }
+  ]
+}

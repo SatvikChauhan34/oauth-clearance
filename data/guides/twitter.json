@@ -1,0 +1,443 @@
+{
+  "slug": "twitter",
+  "name": "X (Twitter) API v2",
+  "provider": "X Corp.",
+  "website": "https://docs.x.com",
+  "category": "Social Media",
+  "composio_managed": false,
+  "verdict": "Register an app in the X Developer Console (console.x.com), enable OAuth 2.0 (PKCE) as a Web App with offline.access, and buy pay-per-use credits. There is no app review and no managed option, but every call is billed and AI-generated replies need prior approval from X.",
+  "difficulty": {
+    "score": 3,
+    "label": "Moderate",
+    "rationale": "Technically self-serve with no app review. However, no free tier exists for new developers: pay-per-use credits are mandatory before any call succeeds. Strict automation and AI-reply policies carry suspension risk, and since Feb 2026 programmatic replies are blocked unless the author summoned your account."
+  },
+  "timeline": {
+    "first_token": {
+      "estimate": "20–40 min",
+      "note": "Sign up at console.x.com, accept the Developer Agreement, create an app, configure OAuth 2.0, add a card and buy credits."
+    },
+    "production": {
+      "estimate": "1–3 days",
+      "active_effort": "0.5–2 days (token rotation handling, spend limits, automation-rule compliance)",
+      "waiting": "None for standard posting/reading. Prior approval from X is needed for AI-generated replies (no published timeline). Enterprise sales cycle if you exceed the pay-per-use read cap.",
+      "note": "No user caps or app review. Production readiness means billing and spend caps, single-flight refresh-token rotation, and compliance with automation rules."
+    }
+  },
+  "cost": "Pay-per-use credits required (no subscription). Pricing per docs.x.com as checked: post read $0.005/resource, user lookup $0.010, post create $0.015, post with URL $0.20, owned reads $0.001. Pay-per-use capped at 3M post reads per billing cycle; Enterprise is custom above that. Legacy Basic/Pro closed to new signups.",
+  "paths": [
+    {
+      "name": "Pay-per-use (default for all new developers)",
+      "who_for": "Any AI agent posting/reading on behalf of users.",
+      "review": "none (use-case description at signup/app creation)",
+      "limits": "Prepaid credits; spend limit per billing cycle; 3M post reads/cycle cap; per-endpoint rate limits; replies only when summoned (mentioned/quoted)."
+    },
+    {
+      "name": "Enterprise",
+      "who_for": "High-volume read, firehose/compliance streams, or unrestricted programmatic replies.",
+      "review": "Sales contract with X.",
+      "limits": "Custom pricing (community reports tens of thousands USD/month)."
+    }
+  ],
+  "prerequisites": [
+    {
+      "item": "X account for the developer (phone/email verified)",
+      "owner": "human",
+      "note": "Developer Console sign-in uses an X account."
+    },
+    {
+      "item": "Payment card for credits",
+      "owner": "human",
+      "note": "Requests fail with 402 when credits are depleted."
+    },
+    {
+      "item": "Use-case description (how you will use the API)",
+      "owner": "agent",
+      "note": "Requested at signup and app creation; be accurate about AI/automation."
+    },
+    {
+      "item": "HTTPS callback URL(s) and website URL",
+      "owner": "agent",
+      "note": "Up to 10 callback URLs; exact match including trailing slash."
+    },
+    {
+      "item": "Terms of service and privacy policy URLs",
+      "owner": "agent",
+      "note": "Shown to users on the consent screen (reported)."
+    }
+  ],
+  "steps": [
+    {
+      "phase": "Register",
+      "title": "Sign up in the Developer Console",
+      "detail": "Go to console.x.com, sign in with X, accept the Developer Agreement and Policy, and complete the profile with a description of how you'll use the API (mention AI agent posting on users' behalf with consent).",
+      "owner": "human",
+      "time": "10 min",
+      "url": "https://docs.x.com/x-api/getting-started/getting-access.md"
+    },
+    {
+      "phase": "Register",
+      "title": "Create an app and save credentials",
+      "detail": "Dashboard > New App > name, description, use case. Copy the API Key/Secret and Bearer Token right away, because credentials are shown only once. Regenerating them invalidates the old ones.",
+      "owner": "human",
+      "time": "5 min"
+    },
+    {
+      "phase": "Configure",
+      "title": "Configure user authentication (OAuth 2.0)",
+      "detail": "App > authentication settings: enable OAuth 2.0 (and OAuth 1.0a only if you need legacy endpoints). App permissions: Read and write (add Direct Messages only if needed). Type of App: Web App, Automated App or Bot (confidential client, gets a Client Secret). Callback URI / Redirect URL: exact HTTPS URLs, max 10. Website URL, plus Terms/Privacy URLs. Save, then copy the OAuth 2.0 Client ID and Client Secret.",
+      "owner": "human",
+      "time": "10 min",
+      "url": "https://docs.x.com/resources/fundamentals/developer-apps.md"
+    },
+    {
+      "phase": "Configure",
+      "title": "Buy credits and set a spend limit",
+      "detail": "Developer Console > billing: add a card, buy credits, set a maximum spend per billing cycle, and optionally enable auto-recharge. Make sure the app is on the Pay-per-use package / Production environment, or calls return 403 client-not-enrolled.",
+      "owner": "human",
+      "time": "5 min",
+      "url": "https://docs.x.com/x-api/getting-started/pricing"
+    },
+    {
+      "phase": "Test",
+      "title": "Run Authorization Code + PKCE",
+      "detail": "Redirect to https://x.com/i/oauth2/authorize?response_type=code&client_id=...&redirect_uri=...&scope=tweet.read%20tweet.write%20users.read%20offline.access&state=...&code_challenge=...&code_challenge_method=S256. Exchange the code within 30 seconds: POST https://api.x.com/2/oauth2/token with grant_type=authorization_code, code, redirect_uri, code_verifier, and Basic auth (client_id:client_secret) for confidential clients.",
+      "owner": "agent",
+      "time": "15 min",
+      "url": "https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code"
+    },
+    {
+      "phase": "Test",
+      "title": "Post and read as the user",
+      "detail": "GET https://api.x.com/2/users/me, then POST https://api.x.com/2/tweets {\"text\": \"...\"}. For media add the media.write scope. Remember each call debits credits (URL posts cost $0.20).",
+      "owner": "agent",
+      "time": "10 min"
+    },
+    {
+      "phase": "Launch",
+      "title": "Harden token refresh",
+      "detail": "Access tokens last 2 h. Refresh with grant_type=refresh_token. Each refresh returns a NEW refresh token and burns the old one, so serialize refreshes per user (distributed lock) and persist the new pair before using it.",
+      "owner": "agent",
+      "time": "2–4 h"
+    },
+    {
+      "phase": "Launch",
+      "title": "Comply with automation and AI rules",
+      "detail": "Get express user consent for automated actions and honor opt-outs. Use no keyword-triggered auto-replies and no trending-topic automation. Bot accounts must enable the 'Automated' label and say in the bio who runs them. Get prior approval from X before deploying AI-generated replies. Do not use X data to train models.",
+      "owner": "both",
+      "time": "0.5 day",
+      "url": "https://docs.x.com/developer-guidelines"
+    },
+    {
+      "phase": "Review",
+      "title": "Only if needed: request approval for AI replies / Enterprise",
+      "detail": "If your agent replies with AI-generated content, request prior approval from X (via platform support/your X contact) before launch. For volume above the pay-per-use cap or replies without being summoned, contact X Enterprise sales.",
+      "owner": "human",
+      "time": "1 h",
+      "wait": "No published timeline"
+    }
+  ],
+  "review": {
+    "required": "conditional",
+    "trigger": "No app review for standard OAuth apps. Prior approval from X is required before deploying AI-generated replies. Enterprise needs a contract. Policy enforcement happens after the fact (suspension).",
+    "process": "Use-case description at signup and app creation, with no human review gate observed. For AI replies, request X's approval. Violations are handled by app suspension, and you appeal through the Platform Help Form (help.x.com/forms/platform).",
+    "typical_wait": "None for standard access. AI-reply approval and Enterprise have no published timeline.",
+    "reviewers_check": [
+      "Developer Agreement and Policy compliance",
+      "Automation rules (consent, opt-out, no spammy replies/mentions)",
+      "Automated account labeling",
+      "No scraping or unofficial automation",
+      "Data use restrictions (no AI training, off-X matching only with consent)"
+    ],
+    "common_rejections": [
+      "App suspended for automated replies/mentions to non-consenting users",
+      "Undisclosed AI-generated replies without approval",
+      "Rate-limit circumvention",
+      "Use case description not matching actual behaviour"
+    ]
+  },
+  "pre_approval_limits": [
+    "No calls succeed without purchased credits (402 when depleted).",
+    "Pay-per-use: 3M post reads per billing cycle cap.",
+    "Programmatic replies via API v2 only when the original author mentioned or quoted your account (since Feb 2026; Enterprise exempt).",
+    "AI-generated replies require prior approval from X.",
+    "Per-endpoint rate limits (e.g. user/post lookup 900 req/15 min per app under OAuth 2.0)."
+  ],
+  "oauth": {
+    "authorize_url": "https://x.com/i/oauth2/authorize (OAuth 1.0a: https://api.x.com/oauth/authorize after POST oauth/request_token)",
+    "token_url": "https://api.x.com/2/oauth2/token (revoke: https://api.x.com/2/oauth2/revoke; OAuth 1.0a: POST oauth/access_token)",
+    "pkce": "required",
+    "refresh_tokens": "Only when offline.access scope is requested. Rotating, single-use: each refresh returns a new refresh token and invalidates the previous one. Unused refresh tokens eventually expire (reported ~months); revoked on user deauth or client secret regeneration.",
+    "access_token_lifetime": "2 hours (expires_in 7200). Authorization code valid 30 seconds. OAuth 1.0a user tokens do not expire (until revoked).",
+    "redirect_uri_rules": "Must exactly match a registered Callback URI (including trailing slash); up to 10 per app; for local dev use http://127.0.0.1 rather than localhost.",
+    "scopes": "Granular OAuth 2.0 scopes: tweet.read, tweet.write, tweet.moderate.write, users.read, users.email, follows.read/write, like.read/write, list.read/write, block.read/write, mute.read/write, bookmark.read/write, dm.read/dm.write, media.write, space.read, offline.access. Most endpoints need tweet.read + users.read alongside the action scope. App-level permission (Read / Read and write / + DMs) also caps OAuth 1.0a tokens; changing permissions requires users to re-authorize.",
+    "tenant_notes": "Single global tenant. Public clients (Native, SPA) send client_id in body and get no secret; confidential clients (Web App, Automated App/Bot) use Basic auth. Every user action is billed to YOUR developer account."
+  },
+  "gotchas": [
+    {
+      "title": "No free tier: pay-per-use credits required",
+      "detail": "Since Feb 6, 2026 new developers are on pay-per-use credits. Legacy Free users got a one-time voucher; Basic/Pro are closed to new signups. Budget for every read and write, and set a spend limit.",
+      "severity": "high",
+      "evidence": [
+        "e1",
+        "e2",
+        "e3"
+      ]
+    },
+    {
+      "title": "Posts with links cost ~13x more",
+      "detail": "Post create is $0.015, but a post containing a URL is $0.20 (April 2026 pricing). Agents that share links can burn credits fast.",
+      "severity": "high",
+      "evidence": [
+        "e1",
+        "e3"
+      ]
+    },
+    {
+      "title": "Programmatic replies blocked unless summoned",
+      "detail": "Since late Feb 2026, API v2 replies are refused unless the post's author mentioned or quoted your account (Enterprise exempt). A 'reply to this thread' agent feature will fail for most targets.",
+      "severity": "high",
+      "evidence": [
+        "e9",
+        "e10"
+      ]
+    },
+    {
+      "title": "AI-generated replies need prior approval from X",
+      "detail": "Deploying AI-generated replies without approval violates developer guidelines even if the content is helpful. Automated accounts must use the 'Automated' label and disclose the operator in the bio.",
+      "severity": "high",
+      "evidence": [
+        "e7",
+        "e8"
+      ]
+    },
+    {
+      "title": "Rotating single-use refresh tokens",
+      "detail": "Each refresh invalidates the previous refresh token. Concurrent workers refreshing the same user cause 400 invalid_request 'Value passed for the token was invalid.' and force re-auth. Use a per-user lock.",
+      "severity": "high",
+      "evidence": [
+        "e4",
+        "e11"
+      ]
+    },
+    {
+      "title": "30-second authorization code lifetime",
+      "detail": "The code must be exchanged within 30 seconds, so do the exchange synchronously in the callback handler.",
+      "severity": "medium",
+      "evidence": [
+        "e4"
+      ]
+    },
+    {
+      "title": "OAuth authorization alone is not consent for automation",
+      "detail": "Automation rules require express consent for automated actions beyond the OAuth grant, plus immediate opt-out handling. Keyword-triggered auto-replies and trending-topic posting are prohibited, and violations can suspend the app and user accounts.",
+      "severity": "high",
+      "evidence": [
+        "e6"
+      ]
+    },
+    {
+      "title": "Credentials shown once; regenerating breaks tokens",
+      "detail": "Console shows keys only once. Regenerating the client secret invalidates issued tokens.",
+      "severity": "medium",
+      "evidence": [
+        "e5",
+        "e11"
+      ]
+    },
+    {
+      "title": "No training on X data",
+      "detail": "Developer guidelines prohibit using X data to train AI/ML models (Grok excepted). Keep fetched content out of fine-tuning datasets.",
+      "severity": "medium",
+      "evidence": [
+        "e7"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "symptom": "402 Payment Required / credits depleted",
+      "cause": "Credit balance at or below zero.",
+      "fix": "Top up credits in the Developer Console; auto-recharge does not trigger at zero."
+    },
+    {
+      "symptom": "403 client-not-enrolled (type client-forbidden)",
+      "cause": "App not attached to the Pay-per-use package / Production environment.",
+      "fix": "In the Developer Console move the app into the pay-per-use package and Production environment."
+    },
+    {
+      "symptom": "403 on reply POST /2/tweets",
+      "cause": "Reply restriction: the target author did not mention or quote your account.",
+      "fix": "Only reply when summoned, post standalone, or negotiate Enterprise."
+    },
+    {
+      "symptom": "400 invalid_request 'Value passed for the token was invalid.' on refresh",
+      "cause": "Refresh token already used (rotation), revoked, or secret regenerated.",
+      "fix": "Serialize refreshes; reload latest token pair; else re-authorize user."
+    },
+    {
+      "symptom": "'You weren't able to give access to the App' on consent screen",
+      "cause": "Callback mismatch, OAuth 2.0 not enabled, bad PKCE params, or client ID/secret from different apps.",
+      "fix": "Check exact callback URL (trailing slash), enable OAuth 2.0, send code_challenge + method."
+    },
+    {
+      "symptom": "403 oauth1-permissions",
+      "cause": "OAuth 1.0a token issued while app was Read-only.",
+      "fix": "Change permissions to Read and write, regenerate tokens, and have users re-authorize."
+    },
+    {
+      "symptom": "App suspended email",
+      "cause": "Policy violation (automation/spam/AI replies).",
+      "fix": "Appeal via help.x.com/forms/platform; fix behaviour before reinstatement."
+    }
+  ],
+  "agent_vs_human": {
+    "agent_can": [
+      "Write the use-case description and app description",
+      "Generate PKCE flow and Basic-auth token exchange code",
+      "Implement locked refresh-token rotation and 2h expiry handling",
+      "Estimate monthly credit spend from expected usage",
+      "Draft consent and opt-out UX copy and the bot bio disclosure",
+      "Verify callback URLs (exact match, trailing slashes)"
+    ],
+    "human_must": [
+      "Sign in with X account and accept the Developer Agreement",
+      "Create the app and store credentials shown once",
+      "Add payment card, buy credits, set spend limit",
+      "Request AI-reply approval or Enterprise contract from X",
+      "Enable the Automated label on bot accounts",
+      "Appeal suspensions"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "claim": "Pay-per-use prices: read $0.005, user $0.010, create $0.015, URL post $0.20; 3M post reads cap; spend limits; dedup 24h",
+      "source": "https://docs.x.com/x-api/getting-started/pricing",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"capped at 3 million Post reads per monthly billing cycle\" | Re-checked 2026-10-30: create $0.015, URL post $0.200, 3M read cap"
+    },
+    {
+      "id": "e2",
+      "claim": "Pay-per-use launched Feb 2026 with no subscription",
+      "source": "https://www.medianama.com/2026/02/223-x-developer-api-pricing-pay-per-use-model/",
+      "type": "community",
+      "status": "reported",
+      "note": "News article dated Feb 7, 2026 | Corroborated by docs.x.com pricing: \"No subscriptions—pay only for what you use\"; no free tier listed"
+    },
+    {
+      "id": "e3",
+      "claim": "Feb 6 2026 launch; Basic deprecated after Jun 1 2026, Pro after Sep 1 2026; URL rate April 2026",
+      "source": "https://opentweet.io/x-api-pricing",
+      "type": "community",
+      "status": "reported",
+      "note": "Vendor page, last checked Oct 2026"
+    },
+    {
+      "id": "e4",
+      "claim": "PKCE S256/plain, scopes list, 2h access token, offline.access refresh, 30s code, confidential vs public clients",
+      "source": "https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code.md",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Auth code \"has a time limit of 30 seconds\" | 2h token and 30s code re-confirmed"
+    },
+    {
+      "id": "e5",
+      "claim": "Getting access via console.x.com; credentials shown once; OAuth 2.0 recommended over 1.0a",
+      "source": "https://docs.x.com/x-api/getting-started/getting-access.md",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Credentials are only displayed once\""
+    },
+    {
+      "id": "e6",
+      "claim": "Automation rules: OAuth not sufficient consent; no keyword auto-replies; suspension",
+      "source": "https://help.x.com/en/rules-and-policies/x-automation",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Page dated Nov 3, 2017 but still current policy"
+    },
+    {
+      "id": "e7",
+      "claim": "AI-generated replies require prior approval; Automated label; no AI training on X data",
+      "source": "https://docs.x.com/developer-guidelines",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Deploying AI-generated replies without approval is a violation\""
+    },
+    {
+      "id": "e8",
+      "claim": "Automated accounts must display label and link to a human-run account",
+      "source": "https://help.x.com/en/using-x/automated-account-labels",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Our Automation rules require these accounts to display labels\""
+    },
+    {
+      "id": "e9",
+      "claim": "Self-serve customers: replies only permitted if the original author summoned the replying account (@mention or quote); Enterprise not covered by this note",
+      "source": "https://docs.x.com/x-api/posts/manage-tweets/introduction.md",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Replies are only permitted if the original post's author has explicitly summoned\"; secondary: roboin.io 2026-02-24"
+    },
+    {
+      "id": "e10",
+      "claim": "Reply restriction applies to pay-per-use; refused at write step",
+      "source": "https://opentweet.io/how-to/fix-x-api-reply-restriction",
+      "type": "community",
+      "status": "reported",
+      "note": "Updated Aug 31, 2026"
+    },
+    {
+      "id": "e11",
+      "claim": "Refresh tokens rotate (single-use); error 'Value passed for the token was invalid.'",
+      "source": "https://opentweet.io/how-to/fix-x-oauth-refresh-token-expired",
+      "type": "community",
+      "status": "reported",
+      "note": "Every refresh invalidates the one you sent"
+    },
+    {
+      "id": "e12",
+      "claim": "Max 10 callback URLs, exact match incl. trailing slash, use 127.0.0.1; permission change requires reauth; suspension appeal form",
+      "source": "https://docs.x.com/resources/fundamentals/developer-apps.md",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"URLs must match exactly (including trailing slashes)\""
+    },
+    {
+      "id": "e13",
+      "claim": "OAuth 1.0a user tokens do not expire; 3-legged endpoints",
+      "source": "https://docs.x.com/fundamentals/authentication/oauth-1-0a/obtaining-user-access-tokens.md",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"These tokens do not expire but can be revoked\""
+    },
+    {
+      "id": "e14",
+      "claim": "402 credits depleted, 403 client-not-enrolled error meanings",
+      "source": "https://opentweet.io/tools/x-api-error-decoder",
+      "type": "community",
+      "status": "reported",
+      "note": "X's codes page does not list 402 per this source"
+    }
+  ],
+  "uncertain": [
+    "How to request X's prior approval for AI-generated replies (form/contact) and how long it takes is not documented on the pages read.",
+    "Exact dates when legacy Basic (Jun 1, 2026) and Pro (Sep 1, 2026) subscribers were migrated come from a vendor page only.",
+    "Refresh token absolute lifetime for X OAuth 2.0 is not officially documented ('eventually expires' per community).",
+    "Whether a human reviews the use-case description at signup; none was observed in docs, but X may act on it later.",
+    "Enterprise pricing figures (tens of thousands USD/month) are community-reported only.",
+    "Prices change frequently ('subject to change'); confirm in the Developer Console before quoting."
+  ],
+  "last_checked": "2026-10-30",
+  "probes": [
+    {
+      "what": "x.com/i/oauth2/authorize with fake client_id + PKCE params while signed out",
+      "result": "'Log in to X to continue' — client validated after sign-in",
+      "outcome": "partial",
+      "date": "2026-10-30",
+      "method": "Live browser request (no account created, no credentials used)"
+    }
+  ]
+}

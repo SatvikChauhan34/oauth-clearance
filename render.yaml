@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: oauth-clearance
+    runtime: node
+    plan: free
+    buildCommand: "npm test"
+    startCommand: node server.mjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false          # paste in the Render dashboard; never commit it
+      - key: TRUST_PROXY
+        value: "1"
+      - key: GEN_PER_HOUR
+        value: "10"
+      - key: GEN_PER_DAY
+        value: "150"

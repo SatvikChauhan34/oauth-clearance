@@ -1,0 +1,4 @@
+{ "name": "oauth-clearance", "version": "1.0.0", "private": true, "type": "module",
+  "description": "OAuth app setup & approval guides for AI-agent builders, with a live guide-generation agent.",
+  "scripts": { "start": "node server.mjs", "mock": "MOCK=1 node server.mjs", "test": "node test/agent-loop.test.mjs", "build": "python3 build/build.py" },
+  "engines": { "node": ">=18" } }

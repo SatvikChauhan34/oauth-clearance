@@ -1,0 +1,504 @@
+{
+  "slug": "shopify",
+  "name": "Shopify (Admin GraphQL API)",
+  "provider": "Shopify",
+  "website": "https://shopify.dev",
+  "category": "E-commerce",
+  "composio_managed": false,
+  "verdict": "Create the app in the Dev Dashboard (dev.shopify.com) and pick distribution carefully because it can't be changed. Custom distribution reaches one store or one Plus org with no review, same day. Letting arbitrary merchants connect needs public distribution and App Store review, which has been running 2–6+ weeks in 2026, plus a separate protected-customer-data approval if your agent reads customer names, emails, phones or addresses.",
+  "difficulty": {
+    "score": 4,
+    "label": "Hard",
+    "rationale": "Development and custom distribution are self-serve. The App Store path is predictable but heavy. You need a merchant-facing UI in the admin, three mandatory compliance webhooks, expiring offline tokens, Shopify Billing if you charge, and a screencast plus test credentials. Level 2 protected customer data review adds security controls. Review queues have been backlogged through 2026, with community reports of 2–5 weeks before first contact."
+  },
+  "timeline": {
+    "first_token": {
+      "estimate": "30–60 min",
+      "note": "Sign up for a free Partner account, create an app in the Dev Dashboard (or with `shopify app init`), create a dev store, install the app and run the auth code grant. Protected customer fields work on dev stores once you select them in API access requests, with no review."
+    },
+    "production": {
+      "estimate": "Custom distribution: same day. Public/App Store: 3–8+ weeks",
+      "active_effort": "Custom: 1–2 h. Public: 1–3 weeks (embedded UI, compliance webhooks, billing, listing assets, screencast, PCD data-protection answers)",
+      "waiting": "App Store review: officially 'up to 2 weeks', but community reports in 2026 run 2–5+ weeks, and each fix-and-resubmit can add more. Protected customer data review is part of the same submission.",
+      "note": "The wait is driven by the App Review queue (backlogged since early 2026 per Shopify staff), resubmission cycles (resubmitting sends you to the back of the queue), and Level 2 PCD justification."
+    }
+  },
+  "cost": "Free to build and to list. Charging merchants through an App Store app must go through Shopify App Pricing or the Billing API, and Shopify takes a revenue share (not verified here).",
+  "paths": [
+    {
+      "name": "Custom distribution",
+      "who_for": "One specific merchant (an agency client, or your own store) or multiple stores in a single Shopify Plus organization",
+      "review": "none",
+      "limits": "One store, or stores in one Plus org. Installed by a generated install link. The distribution method can't be changed later, so you'd need a new app to go public. Not listed in the App Store. Level 1 and Level 2 protected customer data are available without review."
+    },
+    {
+      "name": "Public distribution (Shopify App Store listing)",
+      "who_for": "An AI-agent product where any merchant can connect their store",
+      "review": "App Store review (automated checks plus human review), and protected customer data review if requested",
+      "limits": "Before approval, installs work only on development stores. Installs must be initiated from Shopify (App Store URL or Shopify-managed install). Needs a merchant-facing UI, compliance webhooks, expiring offline tokens, Billing API for charges and GraphQL Admin API for new apps."
+    },
+    {
+      "name": "Store-owned app (created inside a merchant's organization in Dev Dashboard)",
+      "who_for": "A merchant building an internal integration for their own store",
+      "review": "none",
+      "limits": "Replaces legacy admin-created custom apps, which can't be created after Jan 1, 2026. Can use the client credentials grant for stores in its own organization. Not a multi-tenant option."
+    }
+  ],
+  "prerequisites": [
+    {
+      "item": "Shopify Partner account (free) with access to the Dev Dashboard at dev.shopify.com",
+      "owner": "human",
+      "note": "Sign up and 2FA. Partner Dashboard data has been migrated into Dev Dashboard."
+    },
+    {
+      "item": "Shopify CLI 3.84.1+ and Node.js (if building with the app template)",
+      "owner": "agent",
+      "note": "Needed to deploy config (scopes, compliance webhooks) via shopify.app.toml"
+    },
+    {
+      "item": "Public HTTPS app URL and redirect URL(s)",
+      "owner": "agent",
+      "note": "Valid TLS cert required for App Store"
+    },
+    {
+      "item": "A development store",
+      "owner": "agent",
+      "note": "Created from the Dev Dashboard. Can be created on any plan, including Plus."
+    },
+    {
+      "item": "Privacy policy URL, support contact, emergency developer contact",
+      "owner": "human",
+      "note": "Needed for App Store listing"
+    },
+    {
+      "item": "Data protection answers and security controls for Level 2 PCD (encryption, access logs, incident response policy, etc.)",
+      "owner": "both",
+      "note": "Only if you need customer name/email/phone/address"
+    }
+  ],
+  "steps": [
+    {
+      "phase": "Prepare",
+      "title": "Create a Partner account and open the Dev Dashboard",
+      "detail": "Sign up at partners.shopify.com and open dev.shopify.com/dashboard. Apps, stores, payouts and org settings now live there. App listings, pricing and review still live in the Partner Dashboard until distribution moves to Dev Dashboard.",
+      "owner": "human",
+      "time": "10 min",
+      "url": "https://shopify.dev/docs/apps/build/dev-dashboard/migrate-from-partners"
+    },
+    {
+      "phase": "Register",
+      "title": "Create the app",
+      "detail": "Option A: `shopify app init` (React Router template) then `shopify app dev`. This uses Shopify-managed installation plus token exchange, and expiring offline tokens via `future: { expiringOfflineAccessTokens: true }`. Option B: Dev Dashboard > Apps > Create app for a standalone or API-only agent backend that uses the authorization code grant. Copy the Client ID and Client secret.",
+      "owner": "agent",
+      "time": "10–20 min",
+      "url": "https://shopify.dev/docs/apps/build/authentication-authorization"
+    },
+    {
+      "phase": "Configure",
+      "title": "Set scopes and redirect URLs in shopify.app.toml",
+      "detail": "Under [access_scopes] set `scopes` to the minimum needed (e.g. read_products,read_orders). Avoid read_all_orders unless justified. Under [auth] set `redirect_urls`. These must exactly match the redirect_uri you send. Deploy with `shopify app deploy` to release a version.",
+      "owner": "agent",
+      "time": "15 min",
+      "url": "https://shopify.dev/docs/apps/build/authentication-authorization/get-access-tokens/auth-code-grant/implement-auth-code-grants-manually"
+    },
+    {
+      "phase": "Configure",
+      "title": "Declare mandatory compliance webhooks",
+      "detail": "In shopify.app.toml add [webhooks] api_version plus [[webhooks.subscriptions]] with compliance_topics = [\"customers/data_request\",\"customers/redact\",\"shop/redact\"] and a uri. Verify X-Shopify-Hmac-Sha256 and return 401 on bad HMAC (the community reports the automated checker also accepts 400). Respond 2xx, and complete the action within 30 days. These are no longer set in the dashboard UI. Runtime subscriptions don't satisfy the checker.",
+      "owner": "agent",
+      "time": "1–2 h",
+      "url": "https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance"
+    },
+    {
+      "phase": "Configure",
+      "title": "Choose the distribution method (irreversible)",
+      "detail": "Dev Dashboard > your app > Home > Distribution card > Select distribution method. Custom: enter the merchant's myshopify.com domain, toggle multi-store for a Plus org, then Generate link. Public: you'll create an App Store listing. 'You can't change the method after you select it.'",
+      "owner": "human",
+      "time": "5 min",
+      "url": "https://shopify.dev/docs/apps/launch/distribution/select-distribution-method"
+    },
+    {
+      "phase": "Configure",
+      "title": "Request protected customer data access (if agent touches customer PII)",
+      "detail": "Partner Dashboard > Apps > your app > API access requests > Protected customer data access > Request access. Select 'Protected customer data' (Level 1) with reasons, then select individual fields (Name, Email, Phone, Address = Level 2) with reasons, then complete Data protection details. On dev stores this unlocks immediately. Public apps need review. This also covers customer-related data on orders, so agent workflows over orders usually need at least Level 1.",
+      "owner": "both",
+      "time": "1–3 h",
+      "url": "https://shopify.dev/docs/apps/launch/protected-customer-data"
+    },
+    {
+      "phase": "Test",
+      "title": "Install on a dev store and obtain an expiring offline token",
+      "detail": "Authorize: https://{shop}.myshopify.com/admin/oauth/authorize?client_id=...&scope=...&redirect_uri=...&state=.... On callback, verify hmac and state, and validate shop against ^[a-zA-Z0-9][a-zA-Z0-9\\-]*\\.myshopify\\.com$. Then POST https://{shop}.myshopify.com/admin/oauth/access_token with client_id, client_secret, code, expiring=1. Store access_token (expires_in 3600) and refresh_token (refresh_token_expires_in ≈ 90 days).",
+      "owner": "agent",
+      "time": "30 min",
+      "url": "https://shopify.dev/docs/apps/build/authentication-authorization/get-access-tokens/auth-code-grant/implement-auth-code-grants-manually"
+    },
+    {
+      "phase": "Review",
+      "title": "Build the App Store requirements (public only)",
+      "detail": "Requirements: OAuth immediately on install, before any UI, then redirect to the app UI. A UI is required even for backend or agent apps, embedded in the admin with the latest App Bridge and session tokens that work without third-party cookies. New public apps must use the GraphQL Admin API and expiring offline tokens. Charges go through the Billing API or App Pricing, including upgrade, downgrade and reinstall handling. Run the AI self-review checklist or Dev MCP before you submit.",
+      "owner": "agent",
+      "time": "3–10 days",
+      "url": "https://shopify.dev/docs/apps/launch/shopify-app-store/app-store-requirements"
+    },
+    {
+      "phase": "Review",
+      "title": "Create listing and submit",
+      "detail": "Listing: name, icon, screenshots, pricing details, privacy policy URL. The submission needs a demo screencast (English or subtitled) of onboarding and core features, and test credentials that bypass 2FA/SSO and stay valid after publish. Set an emergency developer contact. Make sure automated checks pass, then submit.",
+      "owner": "human",
+      "time": "2–4 h",
+      "wait": "Officially up to ~2 weeks. 2026 community reports: 2–5+ weeks.",
+      "url": "https://community.shopify.dev/t/longer-app-store-review-times-what-you-need-to-know/31728"
+    },
+    {
+      "phase": "Launch",
+      "title": "Publish and handle token refresh at scale",
+      "detail": "After approval, merchants install from the App Store URL. Refresh with grant_type=refresh_token per shop. Serialize refreshes per shop, save the new access/refresh pair atomically, and always use the newest refresh token. Handle 401 on uninstall (subscribe to app/uninstalled).",
+      "owner": "agent",
+      "time": "ongoing",
+      "url": "https://shopify.dev/changelog/more-resilient-refreshes-for-expiring-offline-access-tokens"
+    }
+  ],
+  "review": {
+    "required": "conditional",
+    "trigger": "Public distribution, so any merchant outside one store or Plus org can install, needs App Store review. Requesting protected customer data on a public app adds PCD review (Level 1 or Level 2). Custom distribution and dev-store-only use need no review.",
+    "process": "Submit from the Partner Dashboard listing. Automated checks run first (compliance webhooks, HMAC verification, OAuth-on-install, etc.), then a human reviewer installs the app on a test store using your screencast and credentials. Feedback comes by email and in the dashboard. Fix and resubmit; resubmitting puts you at the back of the queue. Apps that repeatedly fail may be temporarily suspended from submitting.",
+    "typical_wait": "Confirmation email says up to 2 weeks. Shopify staff acknowledged longer-than-usual times in Feb 2026, and community threads report 2–5+ weeks through Oct 2026.",
+    "reviewers_check": [
+      "OAuth happens immediately after install and reinstall, before any UI interaction (2.3.2/2.3.4)",
+      "App has a functional merchant UI, embedded in the admin with current App Bridge (2.1.3, 2.2.3)",
+      "Embedded app works without third-party cookies or local storage, e.g. in Chrome incognito (session tokens, 1.1.1)",
+      "Mandatory compliance webhooks are declared in config and verify HMAC",
+      "All charges go through the Shopify Billing API or App Pricing, with plan changes working (1.2.x)",
+      "Minimal scopes, with justification for sensitive ones like read_all_orders (3.2)",
+      "Expiring offline access tokens used (3.1.2), valid TLS (3.1.1), GraphQL Admin API for new apps (2.2.4)",
+      "Screencast, working test credentials, accurate listing with no unsubstantiated claims (4.x)",
+      "Protected customer data use matches stated purpose; Level 2 security controls"
+    ],
+    "common_rejections": [
+      "Automated check fails: 'Provides mandatory compliance webhooks' and 'Verifies webhooks with HMAC signatures', because topics were subscribed at runtime instead of in shopify.app.toml, or bad HMAC wasn't rejected",
+      "Install flow not initiated from Shopify, or UI shown before OAuth",
+      "Off-platform billing (Stripe checkout etc.) instead of the Billing API",
+      "Test credentials missing, expired or behind 2FA",
+      "Requesting scopes or protected fields not clearly needed by visible features",
+      "Backend-only/headless app with no meaningful merchant UI"
+    ]
+  },
+  "pre_approval_limits": [
+    "Before approval, a public app can only be installed on development stores; merchant installs are blocked",
+    "Custom distribution: one store, or stores in one Plus organization, permanently for that app",
+    "Protected customer data fields on unreviewed public apps work only on development stores",
+    "Partner Dashboard CLI tokens expire by Feb 6, 2027. Switch CI to SHOPIFY_SERVICE_ACCOUNT_TOKEN."
+  ],
+  "oauth": {
+    "authorize_url": "https://{shop}.myshopify.com/admin/oauth/authorize",
+    "token_url": "https://{shop}.myshopify.com/admin/oauth/access_token",
+    "pkce": "not supported",
+    "refresh_tokens": "Only for expiring offline tokens, requested with expiring=1. The refresh token lasts ~90 days from issue (refreshing can shorten it) and rotates on use. Since Aug 2026 an already-used refresh token can be retried for up to 30 days, until the replacement is used. Online tokens have no refresh token; get a new one by re-running token exchange. Legacy non-expiring offline tokens can be migrated with token exchange (subject_token_type=urn:shopify:params:oauth:token-type:offline-access-token, expiring=1), which permanently invalidates the old token for GraphQL.",
+    "access_token_lifetime": "Expiring offline: 1 hour (expires_in 3600). Online: 24 h or until the user logs out of admin. Non-expiring offline (legacy): no expiry, but rejected with 403 for existing public apps after Jan 1, 2027, and not allowed for public apps created on or after Apr 1, 2026.",
+    "redirect_uri_rules": "Must exactly match one of the redirect_urls in the Dev Dashboard or the [auth] section of shopify.app.toml. HTTPS expected (CLI tunnels used in dev). Validate hmac, state, shop and timestamp before exchanging code.",
+    "scopes": "Comma-separated access scopes like read_products, write_orders, read_customers. read_all_orders (beyond 60 days) needs justification. Protected customer data is a separate permission layer. Level 1 covers customer data excluding identifying fields. Level 2 adds per-field Name, Email, Phone, Address and needs extra security controls and review for public apps. Optional scopes can be dynamically granted and revoked.",
+    "tenant_notes": "Every store is a separate tenant with its own hostname, so all OAuth and API URLs are per shop ({shop}.myshopify.com) and tokens are per app per shop. Shopify keeps one current expiring offline token per app+shop; getting a new one retires older ones after their expiry. Embedded CLI apps use Shopify-managed installation (scopes from toml) plus token exchange of the App Bridge session token (id_token) for online or offline tokens. Uninstall revokes all tokens and gives 401."
+  },
+  "gotchas": [
+    {
+      "title": "Distribution method is permanent",
+      "detail": "Picking Custom distribution for a quick pilot means you need a brand-new app (new client_id, every merchant reinstalls) to go public later.",
+      "severity": "high",
+      "evidence": [
+        "e4"
+      ]
+    },
+    {
+      "title": "Customer PII needs a separate protected customer data approval",
+      "detail": "Agents that read customer names, emails, phones or addresses (including on orders) need Level 2 PCD. Without it, those fields are redacted or error even if you hold read_customers. It works on dev stores, so it often surprises teams only at production.",
+      "severity": "high",
+      "evidence": [
+        "e5"
+      ]
+    },
+    {
+      "title": "Expiring offline tokens are mandatory for new public apps",
+      "detail": "Public apps created on or after Apr 1, 2026 must send expiring=1 and refresh hourly. Existing public apps lose non-expiring tokens on Jan 1, 2027 (403). Your library must implement per-shop serialized refresh with atomic storage.",
+      "severity": "high",
+      "evidence": [
+        "e6",
+        "e7",
+        "e8"
+      ]
+    },
+    {
+      "title": "App Store apps must have a merchant UI and use Shopify Billing",
+      "detail": "A pure backend agent connector isn't permitted. 'All apps in the Shopify App Store must be operational through a UI.' Off-platform charging isn't allowed.",
+      "severity": "high",
+      "evidence": [
+        "e9"
+      ]
+    },
+    {
+      "title": "Review backlog in 2026",
+      "detail": "Shopify staff acknowledged longer review times in Feb 2026. Community threads report 2–5+ weeks, and resubmitting moves you to the back of the queue.",
+      "severity": "medium",
+      "evidence": [
+        "e10",
+        "e11"
+      ]
+    },
+    {
+      "title": "Compliance webhooks must be declared in config, not at runtime",
+      "detail": "The automated checker reads compliance_topics from the released app version. Subscribing via API after install fails the check.",
+      "severity": "medium",
+      "evidence": [
+        "e12",
+        "e13"
+      ]
+    },
+    {
+      "title": "Strict shop hostname validation",
+      "detail": "Use an anchored regex. An unanchored check lets exampleshop.myshopify.com.attacker.example receive the code.",
+      "severity": "medium",
+      "evidence": [
+        "e14"
+      ]
+    },
+    {
+      "title": "Legacy admin custom apps are gone",
+      "detail": "Merchants can no longer create admin custom apps with pre-generated tokens (since Jan 1, 2026). Old tutorials telling users to 'Develop apps > Create an app' in admin are outdated.",
+      "severity": "low",
+      "evidence": [
+        "e3",
+        "e15"
+      ]
+    },
+    {
+      "title": "Refresh-token anomalies have occurred",
+      "detail": "In July 2026 refresh tokens were issued with ~1 second expiry, which Shopify fixed after reports. Log request IDs and treat refresh failures as recoverable for the 30-day window.",
+      "severity": "low",
+      "evidence": [
+        "e16",
+        "e8"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "symptom": "Merchant sees an error installing your public app before approval",
+      "cause": "Unapproved public apps can only install on development stores, and installs must start from Shopify",
+      "fix": "Use dev stores until approved, or ship a separate custom-distribution app for a pilot merchant"
+    },
+    {
+      "symptom": "Automated check failed: 'Provides mandatory compliance webhooks' / 'Verifies webhooks with HMAC signatures'",
+      "cause": "compliance_topics not in the released shopify.app.toml, or invalid HMAC not rejected",
+      "fix": "Add [[webhooks.subscriptions]] compliance_topics, run shopify app deploy, return 401 on bad HMAC, then rerun checks"
+    },
+    {
+      "symptom": "Customer fields null or access-denied errors for email/phone/address on a production store",
+      "cause": "Protected customer data (Level 2 fields) not approved for public app",
+      "fix": "Partner Dashboard > API access requests > Protected customer data access; select fields, complete data protection details, submit for review"
+    },
+    {
+      "symptom": "403 on GraphQL Admin API after Jan 1, 2027 with an old token",
+      "cause": "Non-expiring offline token on a public app",
+      "fix": "Migrate with token exchange (expiring=1) before the deadline, or make merchants re-authenticate"
+    },
+    {
+      "symptom": "invalid_request / redirect_uri mismatch on authorize",
+      "cause": "redirect_uri not exactly in [auth] redirect_urls of the released version",
+      "fix": "Add the URL to shopify.app.toml and shopify app deploy"
+    }
+  ],
+  "agent_vs_human": {
+    "agent_can": [
+      "scaffold the app with Shopify CLI and write shopify.app.toml (scopes, redirect_urls, compliance webhooks)",
+      "implement OAuth with HMAC, state and shop validation and expiring-token refresh",
+      "implement compliance webhook handlers",
+      "draft protected customer data justifications and data-protection answers",
+      "run the AI self-review checklist or Dev MCP against the codebase",
+      "draft listing copy, privacy policy and screencast script",
+      "create dev stores and test installs"
+    ],
+    "human_must": [
+      "sign up for a Partner account and complete 2FA",
+      "accept Partner Program terms",
+      "choose the distribution method (irreversible)",
+      "attest to security controls for Level 2 PCD",
+      "record the demo screencast",
+      "provide test credentials and an emergency contact",
+      "click Submit for review and respond to reviewer emails",
+      "set up payout and tax details if charging"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "claim": "Dev Dashboard is the new home for apps; listings/pricing/review still in Partner Dashboard",
+      "source": "https://shopify.dev/docs/apps/build/dev-dashboard/migrate-from-partners",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Distribution expected to move to Dev Dashboard 'soon'; CLI tokens expire by Feb 6, 2027"
+    },
+    {
+      "id": "e2",
+      "claim": "Next-gen dev platform GA Sep 3, 2025; apps and dev stores moved to Dev Dashboard; CLI 3.84.1+",
+      "source": "https://shopify.dev/changelog/next-gen-dev-platform-ga",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Dev stores can be created on any plan"
+    },
+    {
+      "id": "e3",
+      "claim": "Admin-created custom apps can no longer be created",
+      "source": "https://shopify.dev/docs/apps/build/authentication-authorization",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "admin-created custom apps, which you can no longer create"
+    },
+    {
+      "id": "e4",
+      "claim": "Custom distribution limited to one store or one Plus org; method can't be changed",
+      "source": "https://shopify.dev/docs/apps/launch/distribution/select-distribution-method",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "You can't change the method after you select it."
+    },
+    {
+      "id": "e5",
+      "claim": "PCD Level 1 vs Level 2; Level 2 = name, address, phone, email; public apps need review; dev stores exempt",
+      "source": "https://shopify.dev/docs/apps/launch/protected-customer-data",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Request via Apps > API access requests > Protected customer data access"
+    },
+    {
+      "id": "e6",
+      "claim": "Expiring offline tokens required for public apps created on/after Apr 1, 2026",
+      "source": "https://shopify.dev/changelog/expiring-offline-access-tokens-required-for-public-apps-april-1-2026",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "new public apps must request and use expiring offline access tokens | Apr 2026 changelog said pre-Apr apps \"not affected\"; superseded by migration guide Jan 1 2027 deadline (e7)"
+    },
+    {
+      "id": "e7",
+      "claim": "expiring=1 parameter; token exchange migration; Jan 1, 2027 deadline for existing public apps",
+      "source": "https://shopify.dev/docs/apps/build/authentication-authorization/migrate-to-expiring-offline-access-tokens",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Migration permanently invalidates the old token for GraphQL Admin API requests"
+    },
+    {
+      "id": "e8",
+      "claim": "Used refresh token retryable up to 30 days; refresh token 90-day lifetime",
+      "source": "https://shopify.dev/changelog/more-resilient-refreshes-for-expiring-offline-access-tokens",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Changelog dated Aug 28, 2026"
+    },
+    {
+      "id": "e9",
+      "claim": "App Store requirements: UI required, OAuth before UI, Billing API, session tokens, expiring tokens, GraphQL",
+      "source": "https://shopify.dev/docs/apps/launch/shopify-app-store/app-store-requirements",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "All apps ... must be operational through a UI"
+    },
+    {
+      "id": "e10",
+      "claim": "Shopify staff: review times longer than usual; resubmitting goes to back of queue",
+      "source": "https://community.shopify.dev/t/longer-app-store-review-times-what-you-need-to-know/31728",
+      "type": "community",
+      "status": "verified",
+      "note": "Staff post Feb 26, 2026"
+    },
+    {
+      "id": "e11",
+      "claim": "Review taking more than 2 weeks; 'up to 2 weeks' stated in confirmation email",
+      "source": "https://community.shopify.dev/t/shopify-app-review-taking-more-than-2-weeks-is-this-normal/29646",
+      "type": "community",
+      "status": "reported",
+      "note": "Related threads report 3+ weeks in 2026"
+    },
+    {
+      "id": "e12",
+      "claim": "Three mandatory compliance webhooks, configured in shopify.app.toml; 30 days to act; 401 on bad HMAC",
+      "source": "https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Applies to every App Store app"
+    },
+    {
+      "id": "e13",
+      "claim": "Automated checks fail when compliance topics subscribed at runtime",
+      "source": "https://community.shopify.dev/t/automated-checks-failing-provides-mandatory-compliance-webhooks-verifies-webhooks-with-hmac-signatures-node-express-embedded-app/24933",
+      "type": "community",
+      "status": "reported",
+      "note": "Fix: declare in toml, deploy, reject bad HMAC"
+    },
+    {
+      "id": "e14",
+      "claim": "Authorize/token URLs, HMAC verification, shop regex, response fields incl. refresh_token_expires_in",
+      "source": "https://shopify.dev/docs/apps/build/authentication-authorization/get-access-tokens/auth-code-grant/implement-auth-code-grants-manually",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Anchor both ends of the pattern"
+    },
+    {
+      "id": "e15",
+      "claim": "No new legacy custom apps from admin after Jan 1, 2026",
+      "source": "https://cartcoders.com/blog/shopify-apps/shopify-custom-apps-after-january-1year-dev-dashboard-and-legacy-app-guide/",
+      "type": "community",
+      "status": "reported",
+      "note": "Consistent with official auth overview"
+    },
+    {
+      "id": "e16",
+      "claim": "Refresh tokens issued with ~1s expiry in July 2026, later fixed",
+      "source": "https://community.shopify.dev/t/refresh-token-returned-with-an-expiry-far-shorter-than-the-documented-90-days/35880",
+      "type": "community",
+      "status": "reported",
+      "note": "Fix reported Jul 31, 2026"
+    },
+    {
+      "id": "e17",
+      "claim": "Unapproved public apps blocked from installs outside dev stores; installs must start from App Store URL",
+      "source": "https://community.shopify.dev/t/public-app-review/16253",
+      "type": "community",
+      "status": "reported",
+      "note": "Shopify staff reply, June 10, 2025"
+    },
+    {
+      "id": "e18",
+      "claim": "Offline token 1h/90d refresh; online token 24h or until logout",
+      "source": "https://shopify.dev/docs/apps/auth/access-token-types/offline",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "One current expiring offline token per app and store | Old refresh token stays usable up to 30 days or until newer one used"
+    },
+    {
+      "id": "e19",
+      "claim": "Embedded apps use token exchange + managed install; client credentials only for own-org stores",
+      "source": "https://shopify.dev/docs/apps/build/authentication-authorization",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Apps built with Shopify CLI use managed installation by default"
+    }
+  ],
+  "uncertain": [
+    "Exact current App Store review SLA; only 'up to 2 weeks' (confirmation email) and community reports of 2–5+ weeks",
+    "Protected customer data review duration, which isn't published",
+    "Shopify revenue share percentage on app charges, not verified in this pass",
+    "Whether every App Store app must be embedded, versus just having a UI integrated into admin; requirements text is ambiguous",
+    "Exact date distribution and listing management move from Partner Dashboard to Dev Dashboard ('soon')",
+    "PKCE: not mentioned in the Shopify auth-code-grant docs reviewed; marked 'not supported' because the documented flow is confidential-client only",
+    "Whether the automated HMAC checker expects 401 (official docs) or 400 (community fix); returning 401 per docs is the safe default"
+  ],
+  "last_checked": "2026-10-30",
+  "probes": [
+    {
+      "what": "Not probed",
+      "result": "Authorize URL is per-shop ({shop}.myshopify.com); needs a dev store, which requires creating an account — out of scope for an automated agent.",
+      "outcome": "skipped",
+      "date": "2026-10-30",
+      "method": "n/a"
+    }
+  ]
+}

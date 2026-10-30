@@ -1,0 +1,489 @@
+{
+  "slug": "salesforce",
+  "name": "Salesforce (REST/SOAP APIs via External Client App)",
+  "provider": "Salesforce",
+  "website": "https://developer.salesforce.com",
+  "category": "CRM",
+  "composio_managed": true,
+  "verdict": "Build a Packaged External Client App (not a Connected App) in a free Developer Edition org, ship it in a 2GP managed package, and have each customer's admin install it; plan for per-org admin friction, not a central Salesforce review.",
+  "difficulty": {
+    "score": 3,
+    "label": "Moderate",
+    "rationale": "No mandatory Salesforce review for OAuth, and a dev token takes under an hour. But since Spring '26 new Connected Apps are disabled by default, a Local External Client App only serves its own org, and since Sept 2025 uninstalled apps are blocked for most users. So multi-org production means 2GP packaging plus an admin install in every customer org. AppExchange security review is optional (roughly 3–9 weeks per attempt depending on queue)."
+  },
+  "timeline": {
+    "first_token": {
+      "estimate": "30–60 min",
+      "note": "Sign up for a Developer Edition org, create a Local External Client App, then wait up to ~10 min for it to become active before the first authorize call."
+    },
+    "production": {
+      "estimate": "1–2 weeks to a shippable package; then days–weeks per customer org; +4–8 weeks if you list on AppExchange",
+      "active_effort": "1–3 days (Dev Hub, namespace, 2GP package, install docs for admins)",
+      "waiting": "Mostly each customer admin's change-control process to install the package and assign access; optional AppExchange security review ~3–9 weeks per lap",
+      "note": "Salesforce does not centrally approve OAuth clients. What gates production is (a) packaging the ECA so it can be installed cross-org, (b) customer admins installing it and granting Permitted Users/permission sets, and (c) customers being on an edition with API access."
+    }
+  },
+  "cost": "Free (Developer Edition org, ECA, 2GP packaging). Optional AppExchange security review: $999 per attempt for paid solutions (official, since March 2023; waived for free solutions). Customers need Enterprise/Performance/Unlimited/Developer edition, or Professional + paid API add-on.",
+  "paths": [
+    {
+      "name": "Local External Client App (single org)",
+      "who_for": "Your own org, internal tools, a single customer whose admin creates the ECA in their own org and gives you the keys.",
+      "review": "none",
+      "limits": "Only users of the org that created it can authorize; other orgs get 'Cross-org OAuth flows are not supported for this external client app'."
+    },
+    {
+      "name": "Packaged External Client App via 2GP managed package (multi-tenant)",
+      "who_for": "SaaS / AI-agent products connecting many customer orgs with one consumer key.",
+      "review": "No Salesforce review needed to share an install link; each customer admin must install and approve.",
+      "limits": "Needs Dev Hub + registered namespace (two separate DE orgs). Customer admin controls Permitted Users, refresh token policy, IP relaxation, session timeout."
+    },
+    {
+      "name": "AppExchange listing",
+      "who_for": "Vendors wanting discoverability and the trust signal; enterprise customers often require it.",
+      "review": "AppExchange security review (static scan, dynamic test, manual review).",
+      "limits": "Typically 3–9 weeks per submission; resubmissions re-queue; fee for paid solutions."
+    }
+  ],
+  "prerequisites": [
+    {
+      "item": "Salesforce Developer Edition org (free) at developer.salesforce.com/signup",
+      "owner": "human",
+      "note": "Needs a unique username in email format and email verification. Use a second DE org for the namespace if you will package."
+    },
+    {
+      "item": "User permission 'Create, edit, and delete External Client Apps' (System Administrator has it in DE)",
+      "owner": "human",
+      "note": "Needed to see New External Client App."
+    },
+    {
+      "item": "HTTPS callback URL on your backend (e.g. https://app.example.com/oauth/salesforce/callback)",
+      "owner": "agent",
+      "note": "Exact match against Callback URL field."
+    },
+    {
+      "item": "Salesforce CLI (sf) installed for packaging",
+      "owner": "agent",
+      "note": "sf --version; used for Dev Hub login, package create/version/promote."
+    },
+    {
+      "item": "Customer orgs on Enterprise, Performance, Unlimited or Developer edition (or Professional + API add-on), users with 'API Enabled'",
+      "owner": "human",
+      "note": "Confirm during sales/onboarding; otherwise calls fail with API_DISABLED_FOR_ORG."
+    }
+  ],
+  "steps": [
+    {
+      "phase": "Prepare",
+      "title": "Create a Developer Edition org",
+      "detail": "Sign up at developer.salesforce.com/signup, verify email, set password. Note your My Domain URL (https://<name>.develop.my.salesforce.com). If you will distribute, create a second DE org now for namespace registration.",
+      "owner": "human",
+      "time": "10 min",
+      "url": "https://developer.salesforce.com/signup"
+    },
+    {
+      "phase": "Register",
+      "title": "Create an External Client App (not a Connected App)",
+      "detail": "Setup > Quick Find 'App Manager' (or 'External Client App Manager') > New External Client App. Basic Information: External Client App Name, API Name, Contact Email, Distribution State = Local (for dev) or Packaged (for distribution; do this in the Dev Hub org). Do not try 'New Connected App' — creation is disabled by default since Spring '26 and needs a Support case.",
+      "owner": "human",
+      "time": "10 min",
+      "url": "https://trailhead.salesforce.com/content/learn/projects/build-integrations-with-external-client-apps/create-and-configure-an-external-client-app"
+    },
+    {
+      "phase": "Configure",
+      "title": "Enable OAuth and select scopes",
+      "detail": "Expand API (Enable OAuth Settings) > check Enable OAuth. Callback URL: your exact HTTPS callback (one per line). Selected OAuth Scopes: 'Manage user data via APIs (api)', 'Perform requests at any time (refresh_token, offline_access)', 'Access unique user identifiers (openid)'. Flow Enablement: Enable Authorization Code and Credentials Flow. Security: keep 'Require Proof Key for Code Exchange (PKCE)', 'Require Secret for Web Server Flow', 'Require Secret for Refresh Token Flow' unless you have a reason. Create.",
+      "owner": "both",
+      "time": "10 min"
+    },
+    {
+      "phase": "Configure",
+      "title": "Copy Consumer Key and Secret",
+      "detail": "Open the app > Settings tab > OAuth Settings > Consumer Key and Secret. Salesforce emails a verification code before revealing them. Store in your secret manager (consumer key = client_id, consumer secret = client_secret).",
+      "owner": "human",
+      "time": "5 min"
+    },
+    {
+      "phase": "Configure",
+      "title": "Set OAuth policies in your org",
+      "detail": "App > Policies tab > Edit. OAuth Policies: Permitted Users (All users may self-authorize vs Admin approved users are pre-authorized), Refresh Token Policy = 'Refresh token is valid until revoked' for agents, IP Relaxation. Note: in customer orgs their admin sets these, not you.",
+      "owner": "human",
+      "time": "5 min"
+    },
+    {
+      "phase": "Test",
+      "title": "Wait for propagation, then run the web server flow with PKCE",
+      "detail": "Wait up to ~10 minutes after creating/editing. Redirect user to https://login.salesforce.com/services/oauth2/authorize?response_type=code&client_id=...&redirect_uri=...&scope=api%20refresh_token%20openid&code_challenge=...&code_challenge_method=S256&state=... Exchange at /services/oauth2/token with code_verifier + client_secret. Persist instance_url and id from the response; call APIs at {instance_url}/services/data/vXX.X/.",
+      "owner": "agent",
+      "time": "15 min",
+      "wait": "Up to ~10 min propagation"
+    },
+    {
+      "phase": "Launch",
+      "title": "Set up Dev Hub and namespace for packaging",
+      "detail": "Org A: Setup > Dev Hub > Enable Dev Hub (irreversible). Org B: Setup > Package Manager > Register Namespace. In Org A App Launcher > Namespace Registries > Link Namespace and log into Org B. A single org cannot be both Dev Hub and namespace org.",
+      "owner": "human",
+      "time": "30 min"
+    },
+    {
+      "phase": "Launch",
+      "title": "Create a Packaged ECA and 2GP managed package",
+      "detail": "In the Dev Hub create the ECA with Distribution State = Packaged (same OAuth config). Then: sf org login web --set-default-dev-hub; sf project generate; sf package create --package-type Managed --path force-app; retrieve ExternalClientApplication, ExtlClntAppOauthSettings (and ExtlClntAppOauthConfigurablePolicies) via package.xml; set namespace in sfdx-project.json; sf package version create --installation-key-bypass --code-coverage --wait 20. Global OAuth settings (consumer secret) are not packaged.",
+      "owner": "agent",
+      "time": "2–4 h",
+      "url": "https://nango.dev/docs/api-integrations/salesforce/salesforce-api-oauth-app-setup.md"
+    },
+    {
+      "phase": "Launch",
+      "title": "Promote the package version and publish install instructions",
+      "detail": "Promote the version (sf package version promote) so it installs in production orgs (beta versions install only in sandboxes/scratch/DE). Write an admin guide: install URL, 'Install for Admins Only' vs specific profiles, then Setup > External Client App Manager > your app > Policies: Permitted Users, assign permission set/profile, Refresh Token Policy 'valid until revoked'.",
+      "owner": "both",
+      "time": "2 h"
+    },
+    {
+      "phase": "Launch",
+      "title": "Customer admin installs and grants access",
+      "detail": "Each customer admin opens the install link (login.salesforce.com for prod, test.salesforce.com for sandbox), installs, then grants users access. Only then can their users complete your OAuth flow.",
+      "owner": "human",
+      "time": "15–30 min per org",
+      "wait": "Customer change-control: days to weeks"
+    },
+    {
+      "phase": "Review",
+      "title": "Optional: AppExchange security review",
+      "detail": "Partner Community > Publishing Console > create listing > submit for security review with scanner reports (Code Analyzer), test org credentials, and docs for your external endpoints.",
+      "owner": "both",
+      "time": "2–5 days prep",
+      "wait": "~3–9 weeks per lap; resubmissions re-queue"
+    }
+  ],
+  "review": {
+    "required": "conditional",
+    "trigger": "Only if you list on AppExchange. No review is required to create an ECA or to distribute a managed package by install link; instead every customer org's admin must install/approve the app.",
+    "process": "AppExchange: submit package + listing in the Partner Console; Salesforce Product Security runs static analysis, dynamic testing and manual review including your external web app/API endpoints.",
+    "typical_wait": "~3–9 weeks per submission (ISVforce guide: ~3–4 weeks to initial report; Salesforce's 2023 blog cited a 6–9 week queue); failures add another full lap.",
+    "reviewers_check": [
+      "CRUD/FLS enforcement in Apex",
+      "SOQL injection",
+      "XSS / unescaped output",
+      "CSRF",
+      "Secure storage of OAuth tokens and secrets on your servers",
+      "Scan reports for external endpoints",
+      "Working test credentials"
+    ],
+    "common_rejections": [
+      "Missing CRUD/FLS checks",
+      "Dynamic SOQL from user input",
+      "Stale/unexplained scanner reports",
+      "Reviewer cannot log into the test org",
+      "Apex classes without sharing declarations"
+    ]
+  },
+  "pre_approval_limits": [
+    "Local ECA works only for users in the org where it was created (cross-org flows rejected).",
+    "Uninstalled apps: since Sept 2025 only users with 'Approve Uninstalled Connected Apps' (or 'Use Any API Client' when API Access Control is on) can authorize an app not installed in their org.",
+    "Developer Edition: 5 MB data storage and low API daily limits; fine for testing only.",
+    "Beta (unpromoted) 2GP versions cannot be installed in customer production orgs."
+  ],
+  "oauth": {
+    "authorize_url": "https://login.salesforce.com/services/oauth2/authorize (sandbox: https://test.salesforce.com/...; or the org's My Domain https://<domain>.my.salesforce.com/services/oauth2/authorize)",
+    "token_url": "https://login.salesforce.com/services/oauth2/token (sandbox: test.salesforce.com; or My Domain). Revoke: /services/oauth2/revoke",
+    "pkce": "supported",
+    "refresh_tokens": "Issued when refresh_token (offline_access) scope is granted. Lifetime is governed by the Refresh Token Policy set by the admin of each org (valid until revoked [default], expire after X, expire if unused for X, immediately expire). Optional refresh token rotation setting on the ECA.",
+    "access_token_lifetime": "Not a fixed TTL: tied to the org's session timeout (commonly 2 h; admins can change per org/profile). Treat 401 INVALID_SESSION_ID as 'refresh now'.",
+    "redirect_uri_rules": "Must match a Callback URL registered on the app exactly; HTTPS required for web apps (http://localhost is accepted for local dev in practice). Multiple callback URLs allowed, one per line.",
+    "scopes": "Coarse scopes: api, refresh_token/offline_access, openid, id/profile/email, web, full, plus feature scopes (chatter_api, cdp_*, sfap_api, einstein_gpt_api…). Real data access is governed by the user's profile/permission sets (object/field security), not by scope.",
+    "tenant_notes": "Every customer org has its own instance_url — always store instance_url from the token response and call APIs there. Production users log in via login.salesforce.com, sandbox users via test.salesforce.com; orgs with enforced My Domain login may require their My Domain host. Ask the user for environment (prod/sandbox/custom domain) before redirecting."
+  },
+  "gotchas": [
+    {
+      "title": "New Connected Apps are disabled by default — use External Client Apps",
+      "detail": "Since Spring '26 'New Connected App' is disabled by default in all orgs (UI and API); re-enabling requires a Salesforce Support case and Salesforce says even that exception is temporary. Existing Connected Apps keep working. Salesforce's own docs tie the change to Spring '26 (Help: \"New connected apps can no longer be created in Spring '26\").",
+      "severity": "high",
+      "evidence": [
+        "e1",
+        "e2",
+        "e3"
+      ]
+    },
+    {
+      "title": "A Local ECA cannot authorize users from other orgs",
+      "detail": "ECAs only connect users in the org that created them unless installed in the target org. Error: 'Cross-org OAuth flows are not supported for this external client app'. For multi-tenant SaaS you must package (2GP managed) and have customers install.",
+      "severity": "high",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "title": "Uninstalled apps blocked for most users since Sept 2025",
+      "detail": "Users now need 'Approve Uninstalled Connected Apps' (or 'Use Any API Client' if API Access Control is enabled) to authorize an app not installed in their org. Symptom: OAUTH_APPROVAL_ERROR_GENERIC / error=invalid_client&error_description=app+must+be+installed+into+org. Fix: have the admin install the app (Setup > Connected Apps OAuth Usage > Install, or install your package).",
+      "severity": "high",
+      "evidence": [
+        "e6",
+        "e7",
+        "e8"
+      ]
+    },
+    {
+      "title": "Up to ~10 minutes before a new/edited app works",
+      "detail": "Freshly created apps commonly fail with invalid_client_id / redirect mismatch for several minutes. Wait before debugging.",
+      "severity": "medium",
+      "evidence": [
+        "e9"
+      ]
+    },
+    {
+      "title": "Customer edition must include API access",
+      "detail": "Enterprise, Performance, Unlimited and Developer include API access; Professional only via paid add-on. Users also need the 'API Enabled' permission. Qualify customers before onboarding.",
+      "severity": "high",
+      "evidence": [
+        "e10"
+      ]
+    },
+    {
+      "title": "Refresh token lifetime is the customer admin's decision",
+      "detail": "Each org's admin sets the Refresh Token Policy for your installed app; if they choose 'expire if not used for X' or 'immediately expire', your agent will lose access. Document the recommended 'valid until revoked' setting in your install guide.",
+      "severity": "medium",
+      "evidence": [
+        "e11",
+        "e12"
+      ]
+    },
+    {
+      "title": "PKCE and secret requirements are on by default",
+      "detail": "New ECAs default to Require PKCE + Require Secret for Web Server and Refresh Token flows. Omitting code_challenge gives 'missing required code challenge'; public clients failing refresh usually need 'Require Secret for Refresh Token Flow' turned off.",
+      "severity": "medium",
+      "evidence": [
+        "e9",
+        "e13"
+      ]
+    },
+    {
+      "title": "Migrating a Connected App to an ECA issues new credentials",
+      "detail": "The migration tool generates a new Consumer Key/Secret; old ones stop working and every existing user must re-authorize. Migration is one-way.",
+      "severity": "medium",
+      "evidence": [
+        "e9",
+        "e3"
+      ]
+    },
+    {
+      "title": "Packaging needs two DE orgs and is irreversible",
+      "detail": "Enabling Dev Hub is permanent; the namespace must be registered in a different org and linked. ECAs support 2GP only (no 1GP).",
+      "severity": "low",
+      "evidence": [
+        "e13",
+        "e5"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "symptom": "'New Connected App' button missing or creation blocked",
+      "cause": "Connected App creation disabled by default (Spring '26).",
+      "fix": "Create an External Client App instead; only if you truly need a Connected App, open a Salesforce Support case."
+    },
+    {
+      "symptom": "Cross-org OAuth flows are not supported for this external client app",
+      "cause": "ECA is Local or not installed in the user's org.",
+      "fix": "Package the ECA (Distribution State = Packaged, 2GP managed) and have the customer admin install it."
+    },
+    {
+      "symptom": "OAUTH_APPROVAL_ERROR_GENERIC or error_description=app must be installed into org",
+      "cause": "Uninstalled-app restriction (Sept 2025).",
+      "fix": "Customer admin installs the app/package, or grants 'Approve Uninstalled Connected Apps' to the authorizing user (or 'Use Any API Client' if API Access Control is on)."
+    },
+    {
+      "symptom": "invalid_client_id or redirect_uri_mismatch right after creating the app",
+      "cause": "Propagation delay or callback mismatch.",
+      "fix": "Wait ~10 min; compare redirect_uri byte-for-byte with Callback URL."
+    },
+    {
+      "symptom": "API_DISABLED_FOR_ORG / API is not enabled for this Organization or Partner",
+      "cause": "Customer on Professional/Essentials without API add-on, or user lacks API Enabled.",
+      "fix": "Customer buys API add-on/upgrades edition; admin enables 'API Enabled' on the profile/permission set."
+    },
+    {
+      "symptom": "invalid_grant: expired access/refresh token",
+      "cause": "Org's Refresh Token Policy expired the token, user revoked, or admin changed policy.",
+      "fix": "Ask the admin to set 'Refresh token is valid until revoked'; prompt user to reconnect."
+    },
+    {
+      "symptom": "invalid_grant: authentication failure on sandbox user",
+      "cause": "Sandbox user sent to login.salesforce.com.",
+      "fix": "Use test.salesforce.com or the org's My Domain for sandbox."
+    }
+  ],
+  "agent_vs_human": {
+    "agent_can": [
+      "Generate ECA metadata (ExternalClientApplication, ExtlClntAppOauthSettings) and package.xml",
+      "Run sf CLI packaging commands once the human has logged in",
+      "Implement PKCE web server flow, instance_url storage and refresh handling",
+      "Draft customer-admin install guide (Permitted Users, refresh token policy, permission set)",
+      "Draft AppExchange security review docs and run Code Analyzer",
+      "Verify callback URL exact match"
+    ],
+    "human_must": [
+      "Sign up for DE orgs and verify email",
+      "Create the ECA in Setup (or approve CLI deploy) and reveal the consumer secret via email code",
+      "Enable Dev Hub and register/link namespace",
+      "Accept Salesforce Partner/AppExchange terms and pay review fee",
+      "Customer admins: install package and grant access"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "claim": "Creating connected apps is disabled by default; Support must enable it per org",
+      "source": "https://developer.salesforce.com/docs/platform/sfdx-dev/guide/sfdx-dev-auth-connected-app.html",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Creating connected apps is now disabled by default\"; links 'can no longer be created in Spring '26'"
+    },
+    {
+      "id": "e2",
+      "claim": "Spring '26 disabled Connected App creation in UI and API; Support exception will be removed later",
+      "source": "https://striim.com/docs/en/salesforce-connected-apps-and-external-client-apps.html",
+      "type": "community",
+      "status": "verified",
+      "note": "Vendor doc summarizing Salesforce announcement | Confirmed by Salesforce sfdx dev guide (e1): \"Creating connected apps is now disabled by default\""
+    },
+    {
+      "id": "e3",
+      "claim": "ECA migration issues new consumer key/secret; existing connected apps keep working",
+      "source": "https://dev.to/dipojjal/connected-apps-are-going-away-heres-whats-next-fef",
+      "type": "community",
+      "status": "reported",
+      "note": "Migrated ECA gets a new Consumer Key and Secret"
+    },
+    {
+      "id": "e4",
+      "claim": "ECA only connects users in creating org; error 'Cross-org OAuth flows are not supported'",
+      "source": "https://unified.to/blog/salesforce_external_client_apps_on_multiple_organizations",
+      "type": "community",
+      "status": "reported",
+      "note": "Apr 2026; recommends packaging and admin install"
+    },
+    {
+      "id": "e5",
+      "claim": "ECAs built for 2GP only; local apps stay in original org",
+      "source": "https://salesforcegeek.in/external-client-vs-connected-apps/",
+      "type": "community",
+      "status": "reported",
+      "note": "\"Built for 2GP packaging from the start\""
+    },
+    {
+      "id": "e6",
+      "claim": "Early Sept 2025: most users lose access to uninstalled connected apps; Approve Uninstalled Connected Apps (Summer '25) or Use Any API Client permits it; prior authorizations generally keep working except device flow",
+      "source": "https://admin.salesforce.com/blog/2025/get-ready-for-changes-to-connected-app-usage-restrictions",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Salesforce Admins blog; secondary: soliantconsulting.com Sept 2025 post"
+    },
+    {
+      "id": "e7",
+      "claim": "Error strings OAUTH_APPROVAL_ERROR_GENERIC and app must be installed into org",
+      "source": "https://docs.movedata.io/troubleshooting/connection-and-authentication/salesforce-connected-app-usage-restrictions/",
+      "type": "community",
+      "status": "reported",
+      "note": "error_description=app+must+be+installed+into+org"
+    },
+    {
+      "id": "e8",
+      "claim": "Use Any API Client needed when API Access Control enabled; rollout Aug 28/Sep 2 2025; install via Connected Apps OAuth Usage",
+      "source": "https://www.xappex.com/blog/oauth-approval-error-generic-salesforce/",
+      "type": "community",
+      "status": "reported",
+      "note": "Enforcement reached existing orgs Sept 2, 2025"
+    },
+    {
+      "id": "e9",
+      "claim": "Up to 10 minutes for new app to become active; PKCE default; migration invalidates creds",
+      "source": "https://developers.apideck.com/apis/crm/salesforce/configuration",
+      "type": "community",
+      "status": "reported",
+      "note": "\"It can take up to 10 minutes for the new app to become active.\""
+    },
+    {
+      "id": "e10",
+      "claim": "API included in Enterprise, Performance, Unlimited, Developer; Professional via add-on; API Enabled required",
+      "source": "https://developer.salesforce.com/docs/platform/api-rest/guide/intro-rest-compatible-editions.html",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"Professional Edition orgs can add API access as an add-on.\""
+    },
+    {
+      "id": "e11",
+      "claim": "Refresh token policy options set by admin under Manage App Policies",
+      "source": "https://www.jotform.com/help/understanding-refresh-tokens-in-salesforce/",
+      "type": "community",
+      "status": "reported",
+      "note": "valid until revoked (default) / immediately expire / expire if unused / expire after"
+    },
+    {
+      "id": "e12",
+      "claim": "Subscribers can only Edit Policies; owners can Edit Settings",
+      "source": "https://trailhead.salesforce.com/content/learn/projects/build-integrations-with-external-client-apps/create-and-configure-an-external-client-app",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Owner vs subscriber edit rights on ECA"
+    },
+    {
+      "id": "e13",
+      "claim": "ECA creation steps, PKCE/secret defaults, Dev Hub + namespace packaging steps",
+      "source": "https://nango.dev/docs/api-integrations/salesforce/salesforce-api-oauth-app-setup.md",
+      "type": "community",
+      "status": "reported",
+      "note": "Enable Dev Hub is irreversible; separate namespace org"
+    },
+    {
+      "id": "e14",
+      "claim": "OAuth endpoints; use test.salesforce.com for sandboxes",
+      "source": "https://developer.salesforce.com/docs/atlas.en-us.222.0.api_rest.meta/api/intro_understanding_oauth_endpoints.htm",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "Older doc version; endpoints unchanged"
+    },
+    {
+      "id": "e15",
+      "claim": "Developer Edition free, 5 MB data storage",
+      "source": "https://developer.salesforce.com/docs/atlas.en-us.264.0.api_rest.meta/api_rest/quickstart_dev_org.htm",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"a free and easy solution\""
+    },
+    {
+      "id": "e16",
+      "claim": "Security review fee $999 per attempt for paid apps (since Mar 16 2023, no annual fee); queue cited as 6-9 weeks in 2023; ISVforce guide says ~3-4 weeks to initial report",
+      "source": "https://developer.salesforce.com/blogs/2023/04/prepare-your-app-to-pass-the-appexchange-security-review",
+      "type": "official_docs",
+      "status": "verified",
+      "note": "\"The security review fee is $999 per attempt for paid apps\"; tekunda.com reports 4-5 weeks"
+    },
+    {
+      "id": "e17",
+      "claim": "Session-timeout-based access token lifetime (~2h default)",
+      "source": "https://developer.salesforce.com/docs/atlas.en-us.222.0.api_rest.meta/api/intro_understanding_oauth_endpoints.htm",
+      "type": "inferred",
+      "status": "uncertain",
+      "note": "Not stated on fetched pages; based on general Salesforce behaviour"
+    }
+  ],
+  "uncertain": [
+    "Official Salesforce Help wording on Local vs Packaged ECA cross-org behaviour was not fetched; the cross-org restriction comes from community sources (Unified.to, Nango).",
+    "Whether the Sept 2025 uninstalled-app restriction applies to ECAs identically (moot in practice since ECAs must be installed cross-org).",
+    "Access token lifetime: depends on org session settings; no single official number captured.",
+    "Current AppExchange security review fee for free listings and exact queue times (fee page not fetched for 2026).",
+    "Whether beta 2GP versions are blocked from production installs is from general packaging knowledge, not re-verified this session."
+  ],
+  "last_checked": "2026-10-30",
+  "probes": [
+    {
+      "what": "login.salesforce.com authorize with fake client_id",
+      "result": "error=invalid_client_id&error_description=client identifier invalid (also what you see during the ~10 min propagation window after creating an app)",
+      "outcome": "confirmed",
+      "date": "2026-10-30",
+      "method": "Live browser request (no account created, no credentials used)"
+    }
+  ]
+}
