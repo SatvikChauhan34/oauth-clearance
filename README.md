@@ -38,7 +38,17 @@ npm test                               # offline tests of the agent loop
 
 **Railway or Fly:** the start command is `node server.mjs` and the health check is `/api/health`.
 
-Generated guides are saved to `data/generated/`. On a free host with an ephemeral disk they last until the next restart.
+### Saved data
+
+Onboarding answers (`setups.json`) and generated guides (`generated/`) are saved in `DATA_DIR` (default `data/runtime/`).
+
+- **Read the answers:** set `ADMIN_TOKEN`, then
+  ```bash
+  curl -H "Authorization: Bearer $ADMIN_TOKEN" https://<your-app>/api/admin/setups              # summary counts + rows
+  curl -H "Authorization: Bearer $ADMIN_TOKEN" "https://<your-app>/api/admin/setups?format=csv" -o setups.csv
+  ```
+  Without the token the endpoint returns 404.
+- **Keep it across restarts:** Render's free plan has no persistent disk, so saved data resets on every redeploy or restart. For lasting data, use the Starter plan with the disk block in `render.yaml` (mounted at `/var/data`).
 
 ## What I learned about the problem
 
@@ -72,7 +82,13 @@ Generated guides are saved to `data/generated/`. On a free host with an ephemera
    - Live endpoint probes are shown.
    - Unconfirmed points are listed, not hidden.
 6. **Generated guides look the same but say what they are.** Each carries a banner saying it was researched live and isn't human-reviewed, plus a confidence level.
-7. **Scope: 12 deep guides across the difficulty range instead of 100 shallow ones.** The catalog of 100 apps makes every other app one click from a generated guide. 8 of the 12 are Composio-managed and 4 are bring-your-own.
+7. **One-tap onboarding, no sign-in.** Three questions on the first visit, each answered with a single tap and auto-advancing, skippable at any point:
+   - Your role (Product / Engineering / Operations / Sales / Founder / Other).
+   - Who will connect (own team / pilot customers / public launch).
+   - Whether the agent reads or only writes data.
+
+   Each guide then highlights the matching path and opens with a short "For you" note: where to start for your role, which clock matters, and what to check about scopes. Answers are saved on the server anonymously, keyed by a random ID per browser (no name, email or IP); "Your setup" lets people change them. Sign-in was left out on purpose: it would block reviewers and shared guide links and add account security scope without helping the core problem.
+8. **Scope: 12 deep guides across the difficulty range instead of 100 shallow ones.** The catalog of 100 apps makes every other app one click from a generated guide. 8 of the 12 are Composio-managed and 4 are bring-your-own.
    - Instant: GitHub.
    - Self-serve with caveats: Notion, LinkedIn basics, X.
    - Verification: Outlook, Salesforce.

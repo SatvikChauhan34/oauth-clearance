@@ -16,11 +16,13 @@ Scope: `server.mjs`, `lib/*`, the page (`build/template.html` → `public/index.
 | 8 | **Clickjacking, MIME sniffing, referrer leaks.** | `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, restrictive `Permissions-Policy`, `COOP: same-origin`, and HSTS behind TLS. | `server.mjs` |
 | 9 | **Path traversal.** | Only fixed routes are served, with no static file handler. Generated-guide filenames are server-made (`slug-<8 hex>`) and filtered by regex when listed. | `server.mjs` |
 | 10 | **Supply chain.** | Zero runtime dependencies (Node built-ins only). The only third-party resource is Google Fonts CSS and font files, allowed by the CSP. | `package.json` |
-| 11 | **Visitor privacy.** | No accounts, cookies or analytics. Step checkmarks stay in the visitor's own `localStorage`. Searches go to the search engine from the server, not from the visitor's browser. | — |
+| 11 | **Visitor privacy.** | No accounts, cookies or analytics. Onboarding answers are stored server-side as three enum values (role, audience, access) per random browser ID: no name, email or IP. The dialog says so before anyone answers. Step checkmarks stay in the visitor's own `localStorage`. Searches go to the search engine from the server, not from the visitor's browser. | `server.mjs` |
+| 12 | **Saved-answers endpoint abuse.** Junk or oversized data, or the export being read by others. | `POST /api/setup` accepts only a v4 UUID and whitelisted enum values (2 KB body), is rate-limited per IP, and caps total records. Writes are serialised and atomic. The export needs `ADMIN_TOKEN` (constant-time compare) and returns 404 otherwise. CSV cells are guarded against formula injection. | `server.mjs` |
 
 ## Residual risks and recommendations
 
 - **DNS rebinding.** A hostile domain could resolve to a public address for the check and a private one for the fetch. That window is narrow, and the fetch never sends credentials. To close it fully, pin the connection to the checked IP (custom `http.Agent` lookup) or run behind an egress proxy that blocks private ranges.
+- **Admin token.** Treat `ADMIN_TOKEN` like a password: keep it in the host's secret settings and rotate it if it's shared.
 - **In-memory rate limits.** They reset when the server restarts and aren't shared across instances. That's fine for a single free instance. For more, put the limits in Redis or use the platform's rate limiting.
 - **Keyless search.** DuckDuckGo may throttle cloud IPs. The agent then falls back to reading provider docs directly. Set `BRAVE_API_KEY` for reliability.
 - **API key hygiene.** Use a key scoped only to the Generative Language API, set a budget alert or quota cap in Google Cloud, and **rotate the key** if it has ever been pasted into chats, tickets or screenshots.

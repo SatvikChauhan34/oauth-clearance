@@ -173,6 +173,25 @@ dl.kv dt{color:var(--muted)} dl.kv dd{margin:0;overflow-wrap:anywhere}
 .flow .acc{stroke:var(--accent)}
 .flow path{stroke:var(--faint);fill:none;stroke-width:1.5}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:14px;z-index:30}
+/* onboarding */
+dialog.onb{border:1px solid var(--line);border-radius:14px;padding:0;max-width:560px;width:calc(100% - 32px);background:var(--surface);color:var(--ink)}
+dialog.onb::backdrop{background:rgb(0 0 0 / .45)}
+.onb .in{padding:24px;display:grid;gap:16px}
+.onb .q{display:grid;gap:8px;border:0;margin:0;padding:0}
+.onb legend{font-weight:600;margin-bottom:6px}
+.onb .opts{display:grid;gap:6px}
+.onb .opt{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:var(--surface);color:var(--ink);text-align:left;font:inherit;width:100%}
+.onb .opt:hover{border-color:var(--faint)}
+.onb .opt[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.onb .opts.grid2{grid-template-columns:1fr 1fr}
+@media (max-width:480px){.onb .opts.grid2{grid-template-columns:1fr}}
+.onb .opt input{margin-top:3px;accent-color:var(--accent)}
+.onb .foot{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.onb .dots{display:flex;gap:6px}.onb .dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}.onb .dots i.on{background:var(--accent)}
+.onb ol.read{margin:0;padding-left:20px;display:grid;gap:10px}
+.mine{outline:2px solid var(--accent);outline-offset:-1px}
+.me-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13.5px}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer}
 @media (max-width:860px){
   .ticket{grid-template-columns:minmax(0,1fr)}
   .ticket .stub{border-left:0;border-top:2px dashed var(--line)}
@@ -195,9 +214,11 @@ dl.kv dt{color:var(--muted)} dl.kv dd{margin:0;overflow-wrap:anywhere}
     <a href="#library" data-nav="library">Library</a>
     <a href="#new" data-nav="new">Generate a guide</a>
     <a href="#method" data-nav="method">Method &amp; evidence</a>
+    <button class="btn" id="mysetup" type="button" style="padding:6px 12px">Your setup</button>
   </nav>
 </div></header>
 <main class="wrap" id="app" tabindex="-1"></main>
+<dialog class="onb" id="onb" aria-labelledby="onb-title"><form method="dialog" class="in" id="onbform"></form></dialog>
 <div class="tip" id="tip" hidden></div>
 <div class="toast" id="toast" hidden></div>
 
@@ -259,6 +280,7 @@ function viewLibrary() {
       <input id="q" placeholder="App name or website, e.g. Google Calendar or hubspot.com" list="appnames">
       <datalist id="appnames">${DATA.catalog.map(c => `<option value="${esc(c.name)}">`).join("")}</datalist>
       <button class="btn primary" type="submit">Look up</button></form>
+    <div class="me-bar" id="mebar"></div>
     <div class="tries"><span class="small muted">Try:</span>${["Gmail", "Slack", "GitHub", "Google Calendar", "HubSpot", "Calendly", "Pipedrive"].map(t => `<button type="button" data-try="${esc(t)}">${esc(t)}</button>`).join("")}</div>
   </section>
 
@@ -290,7 +312,7 @@ function viewLibrary() {
     </div>
     <div class="panel table-wrap"><table><thead><tr><th>App</th><th>Category</th><th>Composio directory</th><th>Guide</th></tr></thead><tbody id="catbody"></tbody></table></div>
   </section>`;
-  drawCards(ready); drawChart(ready); drawCatalog(); drawGenList();
+  drawCards(ready); drawChart(ready); drawCatalog(); drawGenList(); drawMeBar();
   $("#lookup").onsubmit = e => { e.preventDefault(); lookup($("#q").value); };
   document.querySelectorAll("[data-try]").forEach(b => b.onclick = () => lookup(b.dataset.try));
   $("#dfilters").onclick = e => { const b = e.target.closest("[data-d]"); if (!b) return; diffFilter = +b.dataset.d; document.querySelectorAll("#dfilters .chip").forEach(c => c.classList.toggle("on", c === b)); drawCards(ready); };
@@ -409,10 +431,11 @@ function viewGuide(g, ctx) {
       <a href="#s-paths">Pick your path</a><a href="#s-plan">Step plan</a><a href="#s-split">Agent vs you</a><a href="#s-review">Review &amp; approval</a><a href="#s-limits">Limits before approval</a><a href="#s-gotchas">Gotchas</a><a href="#s-blockers">When you're blocked</a><a href="#s-oauth">OAuth reference</a><a href="#s-evidence">Evidence</a>
     </nav>
     <div class="content">
+      ${personalNote(g)}
       ${managedNote ? `<div class="callout info">${managedNote}</div>` : ""}
       ${g.oauth_supported && g.oauth_supported !== "yes" ? `<div class="callout warn"><b>OAuth support: ${esc(g.oauth_supported)}.</b> ${esc(g.auth_alternatives || "")}</div>` : ""}
       <section id="s-paths"><h2>Pick your path</h2><p class="muted small">Requirements depend on who will connect. Most agent products need the last path.</p>
-        <div class="paths">${(g.paths || []).map(p => `<div class="path"><h3>${esc(p.name)}</h3><span class="muted">${esc(p.who_for)}</span><div><b>Review:</b> ${esc(p.review)}</div><div><b>Limits:</b> ${esc(p.limits)}</div></div>`).join("")}</div>
+        <div class="paths">${(g.paths || []).map((p, i) => `<div class="path ${i === myPathIndex(g) ? "mine" : ""}">${i === myPathIndex(g) ? `<span class="chip owner-agent" style="justify-self:start">Matches your setup</span>` : ""}<h3>${esc(p.name)}</h3><span class="muted">${esc(p.who_for)}</span><div><b>Review:</b> ${esc(p.review)}</div><div><b>Limits:</b> ${esc(p.limits)}</div></div>`).join("")}</div>
         ${g.prerequisites?.length ? `<h3 style="margin-top:6px">Before you start</h3><ul class="list">${g.prerequisites.map(p => `<li>${esc(p.item)} <span class="chip owner-${esc(p.owner)}">${p.owner === "agent" ? "Agent" : "You"}</span>${p.note ? `<div class="small muted">${esc(p.note)}</div>` : ""}</li>`).join("")}</ul>` : ""}
       </section>
 
@@ -658,12 +681,115 @@ function viewMethod() {
   </section>`;
 }
 
+// ---------- onboarding: 3 one-tap questions; answers saved anonymously on our server
+const ONB_KEY = "oc:setup:v2";
+const Q = [
+  { id: "role", q: "What's your role?", help: "We'll point you to the parts of each guide you need first.", opts: [
+    ["product", "Product", ""], ["engineering", "Engineering", ""], ["operations", "Operations", ""],
+    ["sales", "Sales", ""], ["founder", "Founder / leadership", ""], ["other", "Other", ""]] },
+  { id: "audience", q: "Who will connect their accounts to your agent?", help: "This decides whether you need the provider's review at all.", opts: [
+    ["own", "Just me or my own team", "Testing or an internal tool"],
+    ["pilot", "A few pilot customers", "Roughly 5–100 outside users"],
+    ["public", "Any customer (public launch)", "Self-serve signups at scale"]] },
+  { id: "access", q: "What will your agent do in the connected app?", help: "Reading people's data is what most often triggers security review.", opts: [
+    ["read", "Read data", "e.g. read emails, files, records"],
+    ["write", "Only act or write", "e.g. send a message, create a record"],
+    ["both", "Both read and write", ""]] },
+];
+const ROLE_TIPS = {
+  product: 'Start with the two clocks and <a href="#s-review">Review &amp; approval</a> to plan the launch date.',
+  engineering: 'Jump to the <a href="#s-plan">Step plan</a> and the <a href="#s-oauth">OAuth reference</a>; <a href="#s-blockers">When you\'re blocked</a> lists the exact errors.',
+  operations: 'Use the <a href="#s-plan">Step plan</a> as your checklist; <a href="#s-split">Agent vs you</a> shows which steps need a person.',
+  sales: 'The verdict and <a href="#s-paths">Pick your path</a> tell you what you can promise customers, and when.',
+  founder: 'Check the two clocks, the cost line, and <a href="#s-gotchas">Gotchas</a> for anything that changes the plan.',
+  other: 'Start with the verdict and the two clocks, then the <a href="#s-plan">Step plan</a>.',
+};
+const getSetup = () => store.get(ONB_KEY, null);
+const setup = () => getSetup() || {};
+const optLabel = (id, v) => (Q.find(q => q.id === id)?.opts.find(o => o[0] === v) || [, ""])[1];
+function myPathIndex(g) {
+  const a = setup().audience; if (!a || !(g.paths || []).length) return -1;
+  const k = ["own", "pilot", "public"].indexOf(a), m = DATA.pathMap[g.slug];
+  if (m) return m[k];
+  const n = g.paths.length; return Math.min(n - 1, k === 0 ? 0 : k === 1 ? (n > 2 ? 1 : n - 1) : n - 1);
+}
+function personalNote(g) {
+  const s = setup(); if (!s.audience && !s.role && !s.access) return "";
+  const lines = [];
+  if (s.role && ROLE_TIPS[s.role]) lines.push(`<b>Where to start${s.role !== "other" ? ` (${esc(optLabel("role", s.role))})` : ""}:</b> ${ROLE_TIPS[s.role]}`);
+  if (s.audience === "own") lines.push('<b>For testing or your own team,</b> Clock 1 is what matters. You can usually skip the provider\'s review for now; check <a href="#s-limits">Limits before approval</a> so you don\'t hit a cap.');
+  if (s.audience === "pilot") lines.push('<b>For a few pilot customers,</b> start with <a href="#s-limits">Limits before approval</a>: many providers let a small number of outside users connect before review. The highlighted path below is the usual fit.');
+  if (s.audience === "public") lines.push(`<b>For a public launch you need Clock 2:</b> ${esc(g.timeline.production.estimate)}. Start the review steps early.`);
+  if (s.access === "read" || s.access === "both") lines.push('Your agent reads data, so check which scopes count as sensitive in <a href="#s-gotchas">Gotchas</a> and <a href="#s-review">Review</a>; read access is the usual trigger for security assessments.');
+  if (s.access === "write") lines.push("Your agent only acts or writes, so ask for the narrowest write scopes; that often keeps you out of the strictest review tier.");
+  return `<div class="callout" style="border-color:var(--accent)"><span class="eyebrow">For you</span>${lines.map(l => `<p class="small">${l}</p>`).join("")}<p class="small"><button class="linkbtn" type="button" data-editsetup>Change your answers</button></p></div>`;
+}
+function drawMeBar() {
+  const el = $("#mebar"); if (!el) return; const s = getSetup();
+  const chips = s ? [optLabel("role", s.role), optLabel("audience", s.audience), optLabel("access", s.access)].filter(Boolean) : [];
+  if (!chips.length) { el.innerHTML = `<span class="muted">New here?</span> <button class="linkbtn" type="button" data-editsetup>Answer 3 quick questions</button> <span class="muted">to tailor every guide to you.</span>`; return; }
+  el.innerHTML = `<span class="muted">Tailored for:</span> ${chips.map(t => `<span class="chip">${esc(t)}</span>`).join("")} <button class="linkbtn" type="button" data-editsetup>Change</button>`;
+}
+let onbStep = 0, onbDraft = {};
+function openOnboarding() { onbStep = 0; onbDraft = { ...setup() }; const d = $("#onb"); if (!d.open) d.showModal(); renderOnb(); }
+function visitorId() {
+  let id = store.get("oc:vid", null);
+  if (!id || !/^[0-9a-f-]{36}$/.test(id)) { id = crypto.randomUUID ? crypto.randomUUID() : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); store.set("oc:vid", id); }
+  return id;
+}
+async function syncSetup(rec, skipped) { // send to our server; the page keeps working if this fails
+  await envReady; if (ENV.kind !== "server") return;
+  try {
+    const r = await fetch("api/setup", { method: "POST", headers: { "content-type": "application/json" }, keepalive: true,
+      body: JSON.stringify({ vid: visitorId(), role: rec.role || null, audience: rec.audience || null, access: rec.access || null, skipped: !!skipped }) });
+    if (r.ok) store.set("oc:synced2", true);
+  } catch {}
+}
+function finishOnb(save) {
+  const prev = getSetup() || {};
+  const rec = save ? { ...onbDraft, done: true } : { ...prev, done: true };
+  const answered = !!(rec.role || rec.audience || rec.access);
+  store.set(ONB_KEY, rec);
+  syncSetup(rec, !answered);
+  $("#onb").close(); route();
+  if (save && answered) toast("Guides tailored to you");
+}
+function renderOnb() {
+  const f = $("#onbform"), q = Q[onbStep];
+  f.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="eyebrow">Tailor the guides · ${onbStep + 1} of ${Q.length}</span><button class="linkbtn small" type="button" data-onb="skip">Skip</button></div>
+    <div class="progress" aria-hidden="true"><i style="width:${(onbStep / Q.length) * 100}%"></i></div>
+    <div><h2 id="onb-title">${esc(q.q)}</h2><p class="small muted" style="margin-top:6px">${esc(q.help)}</p></div>
+    <div class="opts ${q.opts.length > 4 ? "grid2" : ""}" role="group" aria-labelledby="onb-title">
+      ${q.opts.map(([v, l, h]) => `<button type="button" class="opt" data-pick="${v}" aria-pressed="${onbDraft[q.id] === v}"><span><b>${esc(l)}</b>${h ? `<br><span class="small muted">${esc(h)}</span>` : ""}</span></button>`).join("")}
+    </div>
+    <div class="foot">${onbStep ? `<button class="linkbtn small" type="button" data-onb="back">← Back</button>` : "<span></span>"}<span class="small muted">One tap per question</span></div>
+    <p class="small muted">Answers are saved anonymously on our server to improve these guides, linked to a random ID for this browser. No name, email or IP address.</p>`;
+  (f.querySelector('[aria-pressed="true"]') || f.querySelector("[data-pick]")).focus();
+}
+$("#onbform").addEventListener("click", e => {
+  const pick = e.target.closest("[data-pick]");
+  if (pick) {
+    onbDraft[Q[onbStep].id] = pick.dataset.pick;
+    $("#onbform").querySelectorAll("[data-pick]").forEach(x => x.setAttribute("aria-pressed", String(x === pick)));
+    setTimeout(() => { if (onbStep < Q.length - 1) { onbStep++; renderOnb(); } else finishOnb(true); }, 160);
+    return;
+  }
+  const b = e.target.closest("[data-onb]"); if (!b) return;
+  if (b.dataset.onb === "back") { onbStep = Math.max(0, onbStep - 1); renderOnb(); }
+  else if (b.dataset.onb === "skip") finishOnb(!!(onbDraft.role || onbDraft.audience || onbDraft.access));
+});
+$("#onb").addEventListener("cancel", e => { e.preventDefault(); finishOnb(!!(onbDraft.role || onbDraft.audience || onbDraft.access)); });
+$("#mysetup").onclick = openOnboarding;
+document.addEventListener("click", e => { if (e.target.closest("[data-editsetup]")) openOnboarding(); });
+
 // ---------- boot
 let envReady;
 async function boot() {
   envReady = (async () => { try { const r = await fetch("api/health"); if (r.ok) { const h = await r.json(); ENV.kind = "server"; ENV.live = !!h.live; } } catch {} })();
   route();
+  if (!getSetup()?.done && typeof HTMLDialogElement === "function" && (!location.hash || location.hash === "#library")) openOnboarding();
   await envReady;
+  const s0 = getSetup(); if (s0?.done && !store.get("oc:synced2", false)) syncSetup(s0, !(s0.role || s0.audience || s0.access));
   await loadGenerated();
   if (location.hash === "#new") viewNew();
 }

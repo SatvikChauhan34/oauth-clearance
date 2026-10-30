@@ -29,7 +29,11 @@ CHART = {
  "slack":     {"first": 15, "prod": [60480, 141120],  "label": "6–14+ wks"},
  "xero":      {"first": 20, "prod": [43200, 172800],  "label": "1–4+ mo (>50 orgs)"},
 }
+# Which of each guide's `paths` fits the onboarding answer "who will connect?" -> [own, pilot, public] indexes.
+PATH_MAP = {"docusign": [0, 2, 1], "github": [0, 0, 0], "gmail": [1, 1, 2], "linkedin": [0, 0, 0], "notion": [0, 1, 2], "outlook": [0, 2, 2],
+            "salesforce": [0, 1, 1], "shopify": [0, 0, 1], "slack": [0, 1, 2], "twitter": [0, 0, 0], "xero": [0, 1, 2], "zoom": [0, 1, 2]}
 data = {
+  "pathMap": PATH_MAP,
   "guides": guides,
   "catalog": [{"name": n, "slug": s, "managed": m, "category": c} for n, s, m, c in CATALOG],
   "chart": CHART,

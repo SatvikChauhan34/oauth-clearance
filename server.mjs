@@ -2,7 +2,7 @@
 // Zero dependencies (Node 18+). Configuration is via environment variables only (see README / .env.example).
 import http from "node:http";
 import crypto from "node:crypto";
-import { readFile, writeFile, mkdir, readdir, stat, unlink } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir, stat, unlink, rename } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeGuide, checkComposio } from "./lib/agent.mjs";
@@ -18,12 +18,35 @@ const LIMIT_IP_HOUR = Number(env.GEN_PER_HOUR || 10);    // per client IP
 const LIMIT_DAY = Number(env.GEN_PER_DAY || 150);        // whole server: protects API spend
 const MAX_CONCURRENT = Number(env.GEN_CONCURRENCY || 3);
 const MAX_STORED = 500;
-const GEN_DIR = join(ROOT, "data", "generated");
+// Writable data lives in DATA_DIR. On a host with an ephemeral disk, point it at a persistent disk (see README).
+const DATA_DIR = env.DATA_DIR || join(ROOT, "data", "runtime");
+const GEN_DIR = join(DATA_DIR, "generated");
+const SETUPS_FILE = join(DATA_DIR, "setups.json");
+const ADMIN_TOKEN = env.ADMIN_TOKEN || "";               // enables GET /api/admin/setups
+const MAX_SETUPS = 50000;
 
 const directory = JSON.parse(await readFile(join(ROOT, "data", "composio_directory.json"), "utf8"));
 const library = {};
 for (const f of await readdir(join(ROOT, "data", "guides"))) if (f.endsWith(".json")) { const g = JSON.parse(await readFile(join(ROOT, "data", "guides", f), "utf8")); library[g.slug] = g; }
 await mkdir(GEN_DIR, { recursive: true });
+
+// ---- onboarding answers: one anonymous record per browser, keyed by a random visitor id (no name, email or IP)
+const SETUP_ENUMS = { role: ["product", "engineering", "operations", "sales", "founder", "other"], audience: ["own", "pilot", "public"], access: ["read", "write", "both"] };
+let setups = {};
+try { setups = JSON.parse(await readFile(SETUPS_FILE, "utf8")); } catch {}
+let setupWrite = Promise.resolve();
+function saveSetups() { // serialised, atomic (write temp file, then rename)
+  setupWrite = setupWrite.then(async () => { const tmp = SETUPS_FILE + ".tmp"; await writeFile(tmp, JSON.stringify(setups)); await rename(tmp, SETUPS_FILE); }).catch(e => console.error("[setups] save failed", e.message));
+  return setupWrite;
+}
+const setupHits = new Map();
+function setupLimited(ip) { const now = Date.now(), l = (setupHits.get(ip) || []).filter(t => now - t < 36e5); if (l.length >= 30) return true; l.push(now); setupHits.set(ip, l); return false; }
+const csvCell = v => { const t = String(v ?? ""); return /^[=+\-@\t\r]/.test(t) ? `'${t}` : /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+function adminOk(req) {
+  if (!ADMIN_TOKEN) return false;
+  const got = Buffer.from(String(req.headers.authorization || "").replace(/^Bearer\s+/i, "")), want = Buffer.from(ADMIN_TOKEN);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
 
 // Page + strict Content-Security-Policy built from hashes of the page's own inline scripts.
 const PAGE = await readFile(join(ROOT, "public", "index.html"), "utf8");
@@ -87,6 +110,31 @@ http.createServer(async (req, res) => {
       const out = {};
       for (const f of (await readdir(GEN_DIR)).filter(f => /^[a-z0-9-]{3,80}\.json$/.test(f))) { try { out[f.slice(0, -5)] = JSON.parse(await readFile(join(GEN_DIR, f), "utf8")); } catch {} }
       return send(res, 200, out);
+    }
+    if (req.method === "POST" && url.pathname === "/api/setup") {
+      if (!String(req.headers["content-type"] || "").startsWith("application/json")) return send(res, 415, { error: "Expected JSON" });
+      const b = await readBody(req, 2048);
+      const vid = String(b.vid || "");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(vid)) return send(res, 400, { error: "Invalid visitor id" });
+      const rec = {};
+      for (const [k, allowed] of Object.entries(SETUP_ENUMS)) { const v = b[k] == null ? "" : String(b[k]); if (v && !allowed.includes(v)) return send(res, 400, { error: `Invalid ${k}` }); rec[k] = v || null; }
+      rec.skipped = b.skipped === true && !rec.role && !rec.audience && !rec.access;
+      if (setupLimited(clientIp(req))) return send(res, 429, { error: "Too many updates" });
+      if (!setups[vid] && Object.keys(setups).length >= MAX_SETUPS) return send(res, 507, { error: "Storage full" });
+      const now = new Date().toISOString();
+      setups[vid] = { ...rec, created: setups[vid]?.created || now, updated: now };
+      await saveSetups();
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === "GET" && url.pathname === "/api/admin/setups") {
+      if (!adminOk(req)) return send(res, 404, { error: "Not found" });
+      const rows = Object.entries(setups).map(([vid, r]) => ({ vid, ...r }));
+      if (url.searchParams.get("format") === "csv") {
+        const cols = ["vid", "role", "audience", "access", "skipped", "created", "updated"];
+        return send(res, 200, [cols.join(","), ...rows.map(r => cols.map(c => csvCell(r[c])).join(","))].join("\n"), "text/csv; charset=utf-8", { "content-disposition": "attachment; filename=setups.csv" });
+      }
+      const count = k => rows.reduce((a, r) => (a[r[k] ?? "unanswered"] = (a[r[k] ?? "unanswered"] || 0) + 1, a), {});
+      return send(res, 200, { total: rows.length, skipped: rows.filter(r => r.skipped).length, role: count("role"), audience: count("audience"), access: count("access"), rows });
     }
     if (req.method === "POST" && url.pathname === "/api/generate") {
       if (!String(req.headers["content-type"] || "").startsWith("application/json")) return send(res, 415, "Expected JSON.", "text/plain; charset=utf-8");
